@@ -1,3 +1,14 @@
+//! A generic connection pool, designed for asynchronous tokio-based connections
+//! This is an asynchronous tokio-based version of r2d2.
+//!
+//! Opening a new database connection every time one is needed is both
+//! inefficient and can lead to resource exhaustion under high traffic
+//! conditions. A connection pool maintains a set of open connections to a
+//! database, handing them out for repeated use.
+//!
+//! bb8 is agnostic to the connection type it is managing. Implementors of the
+//! `ManageConnection` trait provide the database-specific logic to create and
+//! check the health of connections.
 #[deny(missing_docs)]
 
 extern crate futures;
@@ -499,7 +510,6 @@ fn get_idle_connection<M>
                         }
                     }))
             } else {
-                // XXXkhuey todo test_on_check_out
                 Box::new(Ok(Loop::Break(conn.conn)).into_future())
             }
         } else {
@@ -534,7 +544,8 @@ fn drop_connections<'a, L, M>(pool: &Arc<SharedPool<M>>,
     mem::drop(internals);
 
     // And drop the connections
-    // TODO: connection_customizer::on_release!
+    // TODO: connection_customizer::on_release! That would require figuring out the
+    // locking situation though
     f
 }
 
@@ -671,8 +682,12 @@ impl<M: ManageConnection> Pool<M> {
         }
     }
 
-    /// Run a closure with a `Connection`. Returns a future that must be polled
-    /// to drive the process.
+    /// Run a closure with a `Connection`.
+    ///
+    /// The closure will be executed on the tokio event loop provided during
+    /// the construction of this pool, so it must be `Send`. The closure's return
+    /// value need not be `Send` as it will live only on the tokio event loop.
+    /// The return value of this function must be polled on the calling thread.
     pub fn run<'a, T, E, U, F>(&self, f: F) -> Box<Future<Item = T, Error = E> + 'a>
         where F: FnOnce(M::Connection) -> U + Send + 'a,
               U: IntoFuture<Item = (T, M::Connection), Error = (E, M::Connection)> + 'a,

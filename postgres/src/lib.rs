@@ -1,5 +1,4 @@
-//!
-
+//! Postgres support for the `bb8` connection pool.
 #![deny(missing_docs)]
 
 pub extern crate bb8;
