@@ -29,24 +29,21 @@ pub enum TlsMode {
     Require(Box<Handshake + Sync + Send>),
 }
 
+impl fmt::Debug for TlsMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match *self {
+            TlsMode::None => &"TlsMode::None",
+            TlsMode::Prefer(_) => &"TlsMode::Prefer",
+            TlsMode::Require(_) => &"TlsMode::Require",
+        })
+    }
+}
+
 /// A `bb8::ManageConnection` for `tokio_postgres::Connection`s.
+#[derive(Debug)]
 pub struct PostgresConnectionManager {
     params: ConnectParams,
     tls_mode: TlsMode,
-}
-
-impl fmt::Debug for PostgresConnectionManager {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("PostgresConnectionManager")
-            .field("params", &self.params)
-            .field("tls_mode",
-                   match self.tls_mode {
-                       TlsMode::None => &"None",
-                       TlsMode::Prefer(_) => &"Prefer",
-                       TlsMode::Require(_) => &"Require",
-                   })
-            .finish()
-    }
 }
 
 impl PostgresConnectionManager {
