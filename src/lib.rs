@@ -1,8 +1,10 @@
 #[deny(missing_docs)]
 
 extern crate futures;
+extern crate owning_ref;
 extern crate tokio_core;
 
+use std::borrow::BorrowMut;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::fmt;
@@ -13,9 +15,10 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant};
 
 use futures::{Future, IntoFuture, Stream};
-use futures::future::{lazy, ok, Either};
+use futures::future::{lazy, loop_fn, ok, Either, Loop};
 use futures::stream::FuturesUnordered;
 use futures::sync::oneshot;
+use owning_ref::OwningHandle;
 use tokio_core::reactor::{Interval, Handle, Remote, Timeout};
 
 mod util;
@@ -38,7 +41,7 @@ pub trait ManageConnection: Send + Sync + 'static {
     /// Attempts to create a new connection.
     fn connect(&self) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send>;
     /// Determines if the connection is still connected to the database.
-    fn is_valid(&self) -> Box<Future<Item = (), Error = Self::Error>>;
+    fn is_valid(&self, conn: &mut Self::Connection) -> Box<Future<Item = (), Error = Self::Error>>;
     /// Synchronously determine if the connection is no longer usable, if possible.
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
 }
@@ -89,6 +92,8 @@ pub struct Builder<M: ManageConnection> {
     max_size: u32,
     /// The minimum idle connection count the pool will attempt to maintain.
     min_idle: Option<u32>,
+    /// Whether or not to test the connection on checkout.
+    test_on_check_out: bool,
     /// The maximum lifetime, if any, that a connection is allowed.
     max_lifetime: Option<Duration>,
     /// The duration, if any, after which idle_connections in excess of `min_idle` are closed.
@@ -105,6 +110,7 @@ impl<M: ManageConnection> Default for Builder<M> {
         Builder {
             max_size: 10,
             min_idle: None,
+            test_on_check_out: true,
             max_lifetime: Some(Duration::from_secs(30 * 60)),
             idle_timeout: Some(Duration::from_secs(10 * 60)),
             connection_timeout: Duration::from_secs(30),
@@ -139,6 +145,15 @@ impl<M: ManageConnection> Builder<M> {
     /// Defaults to None.
     pub fn min_idle(mut self, min_idle: Option<u32>) -> Builder<M> {
         self.min_idle = min_idle;
+        self
+    }
+
+    /// If true, the health of a connection will be verified through a call to
+    /// `ManageConnection::is_valid` before it is provided to a pool user.
+    ///
+    /// Defaults to true.
+    pub fn test_on_check_out(mut self, test_on_check_out: bool) -> Builder<M> {
+        self.test_on_check_out = test_on_check_out;
         self
     }
 
@@ -252,10 +267,6 @@ impl<C> PoolInternals<C> {
                 break;
             }
         }
-        println!("put_idle_conn: {} conns, {} pending, {} idle",
-                 self.num_conns,
-                 self.pending_conns,
-                 self.conns.len());
     }
 }
 
@@ -280,7 +291,6 @@ impl<M: ManageConnection> SharedPool<M> {
             None => self.event_loop.spawn(move |_| runnable),
         }
     }
-
 
     fn or_timeout<'a, F>(&self, f: F) -> Box<Future<Item = Option<F::Item>, Error = F::Error> + 'a>
         where F: IntoFuture + Send,
@@ -336,9 +346,6 @@ fn add_connection<M>(pool: &Arc<SharedPool<M>>,
                      -> Box<Future<Item = (), Error = M::Error> + Send>
     where M: ManageConnection
 {
-    println!("{} conns, {} pending",
-             internals.num_conns,
-             internals.pending_conns);
     assert!(internals.num_conns + internals.pending_conns < pool.statics.max_size);
     internals.pending_conns += 1;
     fn do_it<M>(pool: &Arc<SharedPool<M>>) -> Box<Future<Item = (), Error = M::Error> + Send>
@@ -367,14 +374,12 @@ fn add_connection<M>(pool: &Arc<SharedPool<M>>,
                                     locked.pending_conns -= 1;
                                     locked.num_conns += 1;
                                     locked.put_idle_conn(conn);
-                                    tx.send(Ok(())).map_err(|_| ()).unwrap();
-                                    Ok(())
+                                    tx.send(Ok(())).map_err(|_| ())
                                 }
                                 Err(err) => {
                                     locked.pending_conns -= 1;
                                     // TODO: retry?
-                                    tx.send(Err(err)).map_err(|_| ()).unwrap();
-                                    Err(())
+                                    tx.send(Err(err)).map_err(|_| ())
                                 }
                             }
                         }))
@@ -391,37 +396,74 @@ fn add_connection<M>(pool: &Arc<SharedPool<M>>,
     do_it(pool)
 }
 
-fn get_idle_connection<'a, M>
-    (pool: &Arc<SharedPool<M>>,
-     mut internals: MutexGuard<'a, PoolInternals<M::Connection>>)
-     -> Result<Conn<M::Connection>, MutexGuard<'a, PoolInternals<M::Connection>>>
+fn lock_floating<M>
+    (pool: &Arc<SharedPool<M>>)
+     -> OwningHandle<Arc<SharedPool<M>>, MutexGuard<'static, PoolInternals<M::Connection>>>
     where M: ManageConnection
 {
-    if let Some(conn) = internals.conns.pop_front() {
-        // Spin up a new connection if necessary to retain our minimum idle count
-        if internals.num_conns + internals.pending_conns < pool.statics.max_size {
-            let f = Pool::replenish_idle_connections_locked(pool, &mut internals);
-            pool.proxy_or_dispatch(f.map_err(|_| ()));
-        }
+    OwningHandle::new_with_fn(pool.clone(), |pool| {
+        let pool = unsafe { &*pool };
+        pool.internals.lock().unwrap()
+    })
+}
 
-        // Go ahead and release the lock here.
-        mem::drop(internals);
+fn get_idle_connection<M>
+    (internals: OwningHandle<Arc<SharedPool<M>>, MutexGuard<'static, PoolInternals<M::Connection>>>)
+     -> Box<Future<Item = Conn<M::Connection>,
+                   Error = OwningHandle<Arc<SharedPool<M>>,
+                                        MutexGuard<'static, PoolInternals<M::Connection>>>>>
+    where M: ManageConnection
+{
+    Box::new(loop_fn(internals, |mut internals| {
+        let f: Box<Future<Item = Loop<_, _>, Error = _>> = if let Some(mut conn) = internals.conns
+            .pop_front() {
+            // Spin up a new connection if necessary to retain our minimum idle count
+            let pool = internals.owner().clone();
+            if internals.num_conns + internals.pending_conns < pool.statics.max_size {
+                let f = Pool::replenish_idle_connections_locked(&pool, &mut internals);
+                pool.proxy_or_dispatch(f.map_err(|_| ()));
+            }
 
-        // XXXkhuey todo test_on_check_out
-        Ok(conn.conn)
-    } else {
-        Err(internals)
-    }
+            // Go ahead and release the lock here.
+            mem::drop(internals);
+
+            if pool.statics.test_on_check_out {
+                Box::new(pool.manager
+                    .is_valid(&mut conn.conn.conn)
+                    .then(move |r| match r {
+                        Ok(_) => Ok(Loop::Break(conn.conn)),
+                        Err(_) => {
+                            let mut lock = lock_floating(&pool);
+                            {
+                                drop_connections(&pool,
+                                                 OwningHandle::deref_once_mut(&mut lock),
+                                                 vec![conn.conn.conn]);
+                            }
+                            Ok(Loop::Continue(lock))
+                        }
+                    }))
+            } else {
+                // XXXkhuey todo test_on_check_out
+                Box::new(Ok(Loop::Break(conn.conn)).into_future())
+            }
+        } else {
+            Box::new(Err(internals).into_future())
+        };
+        f
+    }))
 }
 
 // Drop connections
 // NB: This is called with the pool lock held.
-fn drop_connections<'a, M>(pool: &Arc<SharedPool<M>>,
-                           mut internals: MutexGuard<'a, PoolInternals<M::Connection>>,
-                           to_drop: Vec<M::Connection>)
-                           -> Box<Future<Item = (), Error = M::Error> + Send>
-    where M: ManageConnection
+fn drop_connections<'a, L, M>(pool: &Arc<SharedPool<M>>,
+                              mut internals: L,
+                              to_drop: Vec<M::Connection>)
+                              -> Box<Future<Item = (), Error = M::Error> + Send>
+    where M: ManageConnection,
+          L: BorrowMut<MutexGuard<'a, PoolInternals<M::Connection>>>
 {
+    let internals = internals.borrow_mut();
+
     internals.num_conns -= to_drop.len() as u32;
     // We might need to spin up more connections to maintain the idle limit, e.g.
     // if we hit connection lifetime limits
@@ -431,8 +473,10 @@ fn drop_connections<'a, M>(pool: &Arc<SharedPool<M>>,
         Box::new(ok(()))
     };
 
-    // Unlock
+    // Maybe unlock. If we're passed a MutexGuard, this will unlock. If we're passed a
+    // &mut MutexGuard it won't.
     mem::drop(internals);
+
     // And drop the connections
     // TODO: connection_customizer::on_release!
     f
@@ -457,23 +501,17 @@ fn reap_connections<'a, M>(pool: &Arc<SharedPool<M>>,
                            -> Box<Future<Item = (), Error = M::Error> + Send>
     where M: ManageConnection
 {
-    println!("reaping");
     let now = Instant::now();
     let (to_drop, preserve) = internals.conns
         .drain(..)
         .partition2(|conn| {
             let mut reap = false;
             if let Some(timeout) = pool.statics.idle_timeout {
-                println!("idle for {:?}, timeout {:?}",
-                         now - conn.idle_start,
-                         timeout);
                 reap |= now - conn.idle_start >= timeout;
             }
             if let Some(lifetime) = pool.statics.max_lifetime {
-                println!("alive for {:?}, max {:?}", now - conn.conn.birth, lifetime);
                 reap |= now - conn.conn.birth >= lifetime;
             }
-            println!("reaping {}", reap);
             reap
         });
     internals.conns = preserve;
@@ -483,7 +521,6 @@ fn reap_connections<'a, M>(pool: &Arc<SharedPool<M>>,
 fn schedule_one_reaping<M>(handle: Handle, interval: Interval, weak_shared: Weak<SharedPool<M>>)
     where M: ManageConnection
 {
-    println!("schedule_one_reaping");
     handle.clone()
         .spawn(interval.into_future()
             .map_err(|_| ())
@@ -525,7 +562,6 @@ impl<M: ManageConnection> Pool<M> {
             shared.event_loop.spawn(move |handle| {
                 s.upgrade().ok_or(()).map(|shared| {
                     let interval = Interval::new(shared.statics.reaper_rate, handle).unwrap();
-                    println!("Scheduling reapings at {:?}", shared.statics.reaper_rate);
                     schedule_one_reaping(handle.clone(), interval, s);
                 })
             })
@@ -584,8 +620,9 @@ impl<M: ManageConnection> Pool<M> {
         let inner = self.inner.clone();
         let inner2 = inner.clone();
         Box::new(lazy(move || {
-                let f: Box<Future<Item = Conn<M::Connection>, Error = M::Error>> =
-                    match get_idle_connection(&inner, inner.internals.lock().unwrap()) {
+                let lock = lock_floating(&inner);
+                get_idle_connection(lock).then(move |r| {
+                    let f: Box<Future<Item = Conn<M::Connection>, Error = M::Error>> = match r {
                         Ok(conn) => Box::new(ok(conn)),
                         Err(mut locked) => {
                             let (tx, rx) = oneshot::channel();
@@ -602,7 +639,8 @@ impl<M: ManageConnection> Pool<M> {
                                 }))
                         }
                     };
-                f
+                    f
+                })
             })
             .map_err(|e| e.into())
             .and_then(|conn| {
@@ -611,7 +649,6 @@ impl<M: ManageConnection> Pool<M> {
                 f(conn.conn)
                     .into_future()
                     .then(move |r| {
-                        println!("done");
                         let (r, mut conn): (Result<_, E>, _) = match r {
                             Ok((t, conn)) => (Ok(t), conn),
                             Err((e, conn)) => (Err(e.into()), conn),

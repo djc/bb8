@@ -52,7 +52,7 @@ impl<C> ManageConnection for OkManager<C>
         Box::new(ok(Default::default()))
     }
 
-    fn is_valid(&self) -> Box<Future<Item = (), Error = Self::Error>> {
+    fn is_valid(&self, _: &mut Self::Connection) -> Box<Future<Item = (), Error = Self::Error>> {
         Box::new(ok(()))
     }
 
@@ -91,7 +91,7 @@ impl<C> ManageConnection for NthConnectionFailManager<C>
         }
     }
 
-    fn is_valid(&self) -> Box<Future<Item = (), Error = Self::Error>> {
+    fn is_valid(&self, _: &mut Self::Connection) -> Box<Future<Item = (), Error = Self::Error>> {
         Box::new(ok(()))
     }
 
@@ -232,7 +232,9 @@ fn test_drop_on_broken() {
             Box::new(ok(Default::default()))
         }
 
-        fn is_valid(&self) -> Box<Future<Item = (), Error = Self::Error>> {
+        fn is_valid(&self,
+                    _: &mut Self::Connection)
+                    -> Box<Future<Item = (), Error = Self::Error>> {
             Box::new(ok(()))
         }
 
@@ -321,6 +323,97 @@ fn test_get_timeout() {
     tx2.send(()).unwrap();
     let r: Result<(), ()> = Ok(());
     event_loop.run(r.into_future()).unwrap();
+}
+
+#[test]
+fn test_now_invalid() {
+    static INVALID: AtomicBool = ATOMIC_BOOL_INIT;
+
+    struct Handler;
+
+    impl ManageConnection for Handler {
+        type Connection = FakeConnection;
+        type Error = Error;
+
+        fn connect(&self) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send> {
+            let r = if INVALID.load(Ordering::SeqCst) {
+                Err(Error)
+            } else {
+                Ok(FakeConnection)
+            };
+            Box::new(r.into_future())
+        }
+
+        fn is_valid(&self,
+                    _: &mut Self::Connection)
+                    -> Box<Future<Item = (), Error = Self::Error>> {
+            let r = if INVALID.load(Ordering::SeqCst) {
+                Err(Error)
+            } else {
+                Ok(())
+            };
+            Box::new(r.into_future())
+        }
+
+        fn has_broken(&self, _: &mut Self::Connection) -> bool {
+            false
+        }
+    }
+
+    let mut event_loop = Core::new().unwrap();
+    let remote = event_loop.remote();
+    let pool = event_loop.run(Pool::builder()
+            .max_size(2)
+            .min_idle(Some(2))
+            .connection_timeout(Duration::from_secs(1))
+            .build(Handler, remote))
+        .unwrap();
+
+    let (tx1, rx1) = oneshot::channel();
+    let (tx2, rx2) = oneshot::channel();
+    event_loop.execute(pool.run(move |conn| {
+                tx1.send(()).unwrap();
+                rx2.then(|r| match r {
+                    Ok(v) => Ok((v, conn)),
+                    Err(_) => Err((Error, conn)),
+                })
+            })
+            .map_err(|_| ()))
+        .unwrap();
+
+    let (tx3, rx3) = oneshot::channel();
+    let (tx4, rx4) = oneshot::channel();
+    event_loop.execute(pool.run(move |conn| {
+                tx3.send(()).unwrap();
+                rx4.then(|r| match r {
+                    Ok(v) => Ok((v, conn)),
+                    Err(_) => Err((Error, conn)),
+                })
+            })
+            .map_err(|_| ()))
+        .unwrap();
+
+    // Get the first connection.
+    event_loop.run(rx1).unwrap();
+    // Get the second connection.
+    event_loop.run(rx3).unwrap();
+
+    INVALID.store(true, Ordering::SeqCst);
+
+    tx2.send(()).unwrap();
+    tx4.send(()).unwrap();
+
+    // Go idle for a bit
+    let timeout = Timeout::new(Duration::from_secs(2), &event_loop.handle()).unwrap();
+    event_loop.run(timeout).unwrap();
+
+    // Now try to get a new connection.
+    let r = event_loop.run(pool.run(move |conn| {
+            let r: Result<_, (Error, _)> = Ok(((), conn));
+            r
+        })
+        .map_err(|_| ()));
+    assert!(r.is_err());
 }
 
 #[test]
@@ -422,7 +515,6 @@ fn test_min_idle() {
     event_loop.run(timeout).unwrap();
 
     let state = pool.state();
-    println!("State {:?}", state);
     assert_eq!(5, state.idle_connections);
     assert_eq!(5, state.connections);
 }
@@ -449,7 +541,9 @@ fn test_conns_drop_on_pool_drop() {
             Box::new(ok(Connection))
         }
 
-        fn is_valid(&self) -> Box<Future<Item = (), Error = Self::Error>> {
+        fn is_valid(&self,
+                    _: &mut Self::Connection)
+                    -> Box<Future<Item = (), Error = Self::Error>> {
             Box::new(ok(()))
         }
 
