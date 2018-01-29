@@ -8,3 +8,8 @@ description = "r2d2, but for async tokio based connections"
 futures = "0.1"
 owning_ref = { git = "https://github.com/khuey/owning-ref-rs", branch = "owning_handle_owner" }
 tokio-core = "0.1"
+
+[workspace]
+members = [
+    "postgres",
+]

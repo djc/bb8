@@ -23,12 +23,6 @@ impl error::Error for Error {
     }
 }
 
-impl Bb8Error for Error {
-    fn timed_out() -> Self {
-        Error
-    }
-}
-
 #[derive(Debug, Default)]
 struct FakeConnection;
 
@@ -48,16 +42,23 @@ impl<C> ManageConnection for OkManager<C>
     type Connection = C;
     type Error = Error;
 
-    fn connect(&self) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send> {
+    fn connect(&self, _: Handle) -> Box<Future<Item = Self::Connection, Error = Self::Error>> {
         Box::new(ok(Default::default()))
     }
 
-    fn is_valid(&self, _: &mut Self::Connection) -> Box<Future<Item = (), Error = Self::Error>> {
-        Box::new(ok(()))
+    fn is_valid
+        (&self,
+         conn: Self::Connection)
+         -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)>> {
+        Box::new(ok(conn))
     }
 
     fn has_broken(&self, _: &mut Self::Connection) -> bool {
         false
+    }
+
+    fn timed_out(&self) -> Self::Error {
+        Error
     }
 }
 
@@ -81,7 +82,7 @@ impl<C> ManageConnection for NthConnectionFailManager<C>
     type Connection = C;
     type Error = Error;
 
-    fn connect(&self) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send> {
+    fn connect(&self, _: Handle) -> Box<Future<Item = Self::Connection, Error = Self::Error>> {
         let mut n = self.n.lock().unwrap();
         if *n > 0 {
             *n -= 1;
@@ -91,12 +92,19 @@ impl<C> ManageConnection for NthConnectionFailManager<C>
         }
     }
 
-    fn is_valid(&self, _: &mut Self::Connection) -> Box<Future<Item = (), Error = Self::Error>> {
-        Box::new(ok(()))
+    fn is_valid
+        (&self,
+         conn: Self::Connection)
+         -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)>> {
+        Box::new(ok(conn))
     }
 
     fn has_broken(&self, _: &mut Self::Connection) -> bool {
         false
+    }
+
+    fn timed_out(&self) -> Self::Error {
+        Error
     }
 }
 
@@ -228,18 +236,24 @@ fn test_drop_on_broken() {
         type Connection = Connection;
         type Error = Error;
 
-        fn connect(&self) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send> {
+        fn connect(&self, _: Handle) -> Box<Future<Item = Self::Connection, Error = Self::Error>> {
             Box::new(ok(Default::default()))
         }
 
-        fn is_valid(&self,
-                    _: &mut Self::Connection)
-                    -> Box<Future<Item = (), Error = Self::Error>> {
-            Box::new(ok(()))
+        fn is_valid
+            (&self,
+             conn: Self::Connection)
+             -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)>> {
+            Box::new(ok(conn))
         }
 
         fn has_broken(&self, _: &mut Self::Connection) -> bool {
             true
+        }
+
+
+        fn timed_out(&self) -> Self::Error {
+            Error
         }
     }
 
@@ -335,7 +349,7 @@ fn test_now_invalid() {
         type Connection = FakeConnection;
         type Error = Error;
 
-        fn connect(&self) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send> {
+        fn connect(&self, _: Handle) -> Box<Future<Item = Self::Connection, Error = Self::Error>> {
             let r = if INVALID.load(Ordering::SeqCst) {
                 Err(Error)
             } else {
@@ -344,19 +358,25 @@ fn test_now_invalid() {
             Box::new(r.into_future())
         }
 
-        fn is_valid(&self,
-                    _: &mut Self::Connection)
-                    -> Box<Future<Item = (), Error = Self::Error>> {
+        fn is_valid
+            (&self,
+             conn: Self::Connection)
+             -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)>> {
             let r = if INVALID.load(Ordering::SeqCst) {
-                Err(Error)
+                Err((Error, conn))
             } else {
-                Ok(())
+                Ok(conn)
             };
             Box::new(r.into_future())
         }
 
         fn has_broken(&self, _: &mut Self::Connection) -> bool {
             false
+        }
+
+
+        fn timed_out(&self) -> Self::Error {
+            Error
         }
     }
 
@@ -537,18 +557,24 @@ fn test_conns_drop_on_pool_drop() {
         type Connection = Connection;
         type Error = Error;
 
-        fn connect(&self) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send> {
+        fn connect(&self, _: Handle) -> Box<Future<Item = Self::Connection, Error = Self::Error>> {
             Box::new(ok(Connection))
         }
 
-        fn is_valid(&self,
-                    _: &mut Self::Connection)
-                    -> Box<Future<Item = (), Error = Self::Error>> {
-            Box::new(ok(()))
+        fn is_valid
+            (&self,
+             conn: Self::Connection)
+             -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)>> {
+            Box::new(ok(conn))
         }
 
         fn has_broken(&self, _: &mut Self::Connection) -> bool {
             false
+        }
+
+
+        fn timed_out(&self) -> Self::Error {
+            Error
         }
     }
 

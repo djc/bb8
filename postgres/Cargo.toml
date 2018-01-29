@@ -1,0 +1,11 @@
+[package]
+name = "bb8-postgres"
+version = "0.1.0"
+authors = ["Kyle Huey <khuey@kylehuey.com>"]
+
+[dependencies]
+bb8 = { path = ".." }
+futures = "0.1"
+postgres-shared = { git = "https://github.com/khuey/rust-postgres", branch = "bb8-fixes" }
+tokio-core = "0.1"
+tokio-postgres = { git = "https://github.com/khuey/rust-postgres", branch = "bb8-fixes" }
