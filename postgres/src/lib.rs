@@ -1,5 +1,5 @@
 //! Postgres support for the `bb8` connection pool.
-#![deny(missing_docs)]
+#![deny(missing_docs,missing_debug_implementations)]
 
 pub extern crate bb8;
 pub extern crate tokio_postgres;

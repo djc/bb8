@@ -9,7 +9,7 @@
 //! bb8 is agnostic to the connection type it is managing. Implementors of the
 //! `ManageConnection` trait provide the database-specific logic to create and
 //! check the health of connections.
-#[deny(missing_docs)]
+#![deny(missing_docs,missing_debug_implementations)]
 
 extern crate futures;
 extern crate owning_ref;
@@ -393,6 +393,12 @@ impl<M: ManageConnection> SharedPool<M> {
 #[derive(Clone)]
 pub struct Pool<M: ManageConnection> {
     inner: Arc<SharedPool<M>>,
+}
+
+impl<M: ManageConnection> fmt::Debug for Pool<M> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_fmt(format_args!("Pool({:p})", self.inner))
+    }
 }
 
 // Outside of Pool to avoid borrow splitting issues on self
