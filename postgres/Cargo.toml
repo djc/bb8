@@ -6,6 +6,6 @@ authors = ["Kyle Huey <khuey@kylehuey.com>"]
 [dependencies]
 bb8 = { path = ".." }
 futures = "0.1"
-postgres-shared = { git = "https://github.com/khuey/rust-postgres", branch = "bb8-fixes" }
+postgres-shared = { git = "https://github.com/sfackler/rust-postgres" }
 tokio-core = "0.1"
-tokio-postgres = { git = "https://github.com/khuey/rust-postgres", branch = "bb8-fixes" }
+tokio-postgres = { git = "https://github.com/sfackler/rust-postgres" }
