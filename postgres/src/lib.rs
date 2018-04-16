@@ -1,5 +1,5 @@
 //! Postgres support for the `bb8` connection pool.
-#![deny(missing_docs)]
+#![deny(missing_docs, missing_debug_implementations)]
 
 pub extern crate bb8;
 pub extern crate tokio_postgres;
@@ -12,7 +12,6 @@ use futures::Future;
 use tokio_core::reactor::Handle;
 use tokio_postgres::{Connection, Error, TlsMode};
 use tokio_postgres::params::{ConnectParams, IntoConnectParams};
-use tokio_postgres::tls::Handshake;
 
 use std::fmt;
 use std::io;
@@ -64,5 +63,13 @@ impl bb8::ManageConnection for PostgresConnectionManager {
 
     fn timed_out(&self) -> Self::Error {
         postgres_shared::error::io(io::ErrorKind::TimedOut.into())
+    }
+}
+
+impl fmt::Debug for PostgresConnectionManager {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("PostgresConnectionManager")
+            .field("params", &self.params)
+            .finish()
     }
 }
