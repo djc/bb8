@@ -390,9 +390,16 @@ impl<M: ManageConnection> SharedPool<M> {
 }
 
 /// A generic connection pool.
-#[derive(Clone)]
 pub struct Pool<M: ManageConnection> {
     inner: Arc<SharedPool<M>>,
+}
+
+impl<M: ManageConnection> Clone for Pool<M> {
+    fn clone(&self) -> Self {
+        Pool {
+            inner: self.inner.clone(),
+        }
+    }
 }
 
 impl<M: ManageConnection> fmt::Debug for Pool<M> {
