@@ -9,3 +9,6 @@ futures = "0.1"
 postgres-shared = { git = "https://github.com/sfackler/rust-postgres" }
 tokio-core = "0.1"
 tokio-postgres = { git = "https://github.com/sfackler/rust-postgres" }
+
+[dev-dependencies]
+futures-state-stream = "0.2"
