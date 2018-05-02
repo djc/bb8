@@ -43,10 +43,10 @@ impl bb8::ManageConnection for PostgresConnectionManager {
     type Connection = Connection;
     type Error = Error;
 
-    fn connect<'a>(
-        &'a self,
+    fn connect(
+        &self,
         handle: Handle,
-    ) -> Box<Future<Item = Self::Connection, Error = Self::Error> + 'a> {
+    ) -> Box<Future<Item = Self::Connection, Error = Self::Error> + 'static> {
         Connection::connect(self.params.clone(), (self.tls_mode)(), &handle)
     }
 

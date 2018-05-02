@@ -46,9 +46,9 @@ pub trait ManageConnection: Send + Sync + 'static {
     type Error: Send + 'static;
 
     /// Attempts to create a new connection.
-    fn connect<'a>(&'a self,
-                   handle: Handle)
-                   -> Box<Future<Item = Self::Connection, Error = Self::Error> + 'a>;
+    fn connect(&self,
+               handle: Handle)
+               -> Box<Future<Item = Self::Connection, Error = Self::Error> + 'static>;
     /// Determines if the connection is still connected to the database.
     fn is_valid
         (&self,
@@ -759,5 +759,35 @@ impl<M: ManageConnection> Pool<M> {
                         r
                     })
             }))
+    }
+
+    /// Get a new dedicated connection that will not be managed by the pool.
+    /// An application may want a persistent connection (e.g. to do a
+    /// postgres LISTEN) that will not be closed or repurposed by the pool.
+    ///
+    /// This method allows reusing the manager's configuration but otherwise
+    /// bypassing the pool
+    pub fn dedicated_connection(&self) -> Box<Future<Item = M::Connection, Error = M::Error> + 'static> {
+        let inner = self.inner.clone();
+        let event_loop = &self.inner.event_loop;
+
+        match event_loop.handle() {
+            // We're being called on the event loop.
+            Some(handle) => {
+                Box::new(inner.manager.connect(handle))
+            },
+            // We're being called from somewhere else.
+            None => {
+                let (tx, rx) = oneshot::channel();
+                event_loop.spawn(move |handle| {
+                    inner.manager.connect(handle.clone())
+                        .then(move |r| {
+                            tx.send(r).ok();
+                            Ok(())
+                        })
+                });
+                Box::new(rx.then(|r| r.unwrap()))
+            }
+        }
     }
 }
