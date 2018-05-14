@@ -702,7 +702,7 @@ impl<M: ManageConnection> Pool<M> {
     /// value need not be `Send` as it will live only on the tokio event loop.
     /// The return value of this function must be polled on the calling thread.
     pub fn run<'a, T, E, U, F>(&self, f: F) -> Box<Future<Item = T, Error = E> + 'a>
-        where F: FnOnce(M::Connection) -> U + Send + 'a,
+        where F: FnOnce(M::Connection) -> U + 'a,
               U: IntoFuture<Item = (T, M::Connection), Error = (E, M::Connection)> + 'a,
               E: From<M::Error> + 'a,
               T: 'a
