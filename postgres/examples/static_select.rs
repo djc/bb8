@@ -34,7 +34,7 @@ fn main() {
                             println!("result: {}", row.get::<i32, usize>(0));
                         })
                     })
-                    .and_then(|connection| Ok(((), connection)))
+                    .map(|connection| ((), connection))
             })
         });
 
