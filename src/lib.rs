@@ -9,7 +9,7 @@
 //! bb8 is agnostic to the connection type it is managing. Implementors of the
 //! `ManageConnection` trait provide the database-specific logic to create and
 //! check the health of connections.
-#![deny(missing_docs,missing_debug_implementations)]
+#![deny(missing_docs)]
 
 extern crate futures;
 extern crate owning_ref;
@@ -257,7 +257,7 @@ impl<M: ManageConnection> Builder<M> {
     fn build_inner(self,
                    manager: M,
                    event_loop: Remote)
-                   -> (Pool<M>, Box<Future<Item = (), Error = M::Error> + Send>) {
+                   -> (Pool<M>, impl Future<Item = (), Error = M::Error> + Send) {
         if let Some(min_idle) = self.min_idle {
             assert!(self.max_size >= min_idle,
                     "min_idle must be no larger than max_size");
@@ -275,9 +275,9 @@ impl<M: ManageConnection> Builder<M> {
     pub fn build(self,
                  manager: M,
                  event_loop: Remote)
-                 -> Box<Future<Item = Pool<M>, Error = M::Error>> {
+                 -> impl Future<Item = Pool<M>, Error = M::Error> {
         let (p, f) = self.build_inner(manager, event_loop);
-        Box::new(f.map(|_| p))
+        f.map(|_| p)
     }
 
     /// Consumes the builder, returning a new, initialized `Pool`.
@@ -348,7 +348,7 @@ impl<M: ManageConnection> SharedPool<M> {
         Box::new(f.map_err(move |e| sink.sink(e.into())))
     }
 
-    fn or_timeout<'a, F>(&self, f: F) -> Box<Future<Item = Option<F::Item>, Error = F::Error> + 'a>
+    fn or_timeout<'a, F>(&self, f: F) -> impl Future<Item = Option<F::Item>, Error = F::Error> + 'a
         where F: IntoFuture + Send,
               F::Future: 'a,
               F::Item: 'a,
@@ -412,12 +412,12 @@ impl<M: ManageConnection> fmt::Debug for Pool<M> {
 // NB: This is called with the pool lock held.
 fn add_connection<M>(pool: &Arc<SharedPool<M>>,
                      internals: &mut PoolInternals<M::Connection>)
-                     -> Box<Future<Item = (), Error = M::Error> + Send>
+                     -> impl Future<Item = (), Error = M::Error> + Send
     where M: ManageConnection
 {
     assert!(internals.num_conns + internals.pending_conns < pool.statics.max_size);
     internals.pending_conns += 1;
-    fn do_it<M>(pool: &Arc<SharedPool<M>>) -> Box<Future<Item = (), Error = M::Error> + Send>
+    fn do_it<M>(pool: &Arc<SharedPool<M>>) -> impl Future<Item = (), Error = M::Error> + Send
         where M: ManageConnection
     {
         let new_shared = Arc::downgrade(pool);
@@ -461,10 +461,10 @@ fn add_connection<M>(pool: &Arc<SharedPool<M>>,
                 f
             })
         });
-        Box::new(rx.then(|v| match v {
+        rx.then(|v| match v {
             Ok(o) => o,
             Err(_) => panic!(),
-        }))
+        })
     }
 
     do_it(pool)
@@ -483,12 +483,12 @@ fn lock_floating<M>
 
 fn get_idle_connection<M>
     (internals: OwningHandle<Arc<SharedPool<M>>, MutexGuard<'static, PoolInternals<M::Connection>>>)
-     -> Box<Future<Item = Conn<M::Connection>,
+     -> impl Future<Item = Conn<M::Connection>,
                    Error = OwningHandle<Arc<SharedPool<M>>,
-                                        MutexGuard<'static, PoolInternals<M::Connection>>>>>
+                                        MutexGuard<'static, PoolInternals<M::Connection>>>>
     where M: ManageConnection
 {
-    Box::new(loop_fn(internals, |mut internals| {
+    loop_fn(internals, |mut internals| {
         let f: Box<Future<Item = Loop<_, _>, Error = _>> = if let Some(mut conn) = internals.conns
             .pop_front() {
             // Spin up a new connection if necessary to retain our minimum idle count
@@ -529,7 +529,7 @@ fn get_idle_connection<M>
             Box::new(Err(internals).into_future())
         };
         f
-    }))
+    })
 }
 
 // Drop connections
@@ -546,8 +546,8 @@ fn drop_connections<'a, L, M>(pool: &Arc<SharedPool<M>>,
     internals.num_conns -= to_drop.len() as u32;
     // We might need to spin up more connections to maintain the idle limit, e.g.
     // if we hit connection lifetime limits
-    let f = if internals.num_conns + internals.pending_conns < pool.statics.max_size {
-        Pool::replenish_idle_connections_locked(pool, &mut *internals)
+    let f: Box<Future<Item = (), Error = M::Error> + Send> = if internals.num_conns + internals.pending_conns < pool.statics.max_size {
+        Box::new(Pool::replenish_idle_connections_locked(pool, &mut *internals))
     } else {
         Box::new(ok(()))
     };
@@ -565,7 +565,7 @@ fn drop_connections<'a, L, M>(pool: &Arc<SharedPool<M>>,
 fn drop_idle_connections<'a, M>(pool: &Arc<SharedPool<M>>,
                                 internals: MutexGuard<'a, PoolInternals<M::Connection>>,
                                 to_drop: Vec<IdleConn<M::Connection>>)
-                                -> Box<Future<Item = (), Error = M::Error> + Send>
+                                -> impl Future<Item = (), Error = M::Error> + Send
     where M: ManageConnection
 {
     let to_drop = to_drop.into_iter()
@@ -578,7 +578,7 @@ fn drop_idle_connections<'a, M>(pool: &Arc<SharedPool<M>>,
 // NB: This is called with the pool lock held.
 fn reap_connections<'a, M>(pool: &Arc<SharedPool<M>>,
                            mut internals: MutexGuard<'a, PoolInternals<M::Connection>>)
-                           -> Box<Future<Item = (), Error = M::Error> + Send>
+                           -> impl Future<Item = (), Error = M::Error> + Send
     where M: ManageConnection
 {
     let now = Instant::now();
@@ -656,7 +656,7 @@ impl<M: ManageConnection> Pool<M> {
         self.inner.proxy_or_dispatch(runnable);
     }
 
-    fn sink_error<'a, E, F>(&self, f: F) -> Box<Future<Item = F::Item, Error = ()> + Send + 'a>
+    fn sink_error<'a, E, F>(&self, f: F) -> impl Future<Item = F::Item, Error = ()> + Send + 'a
         where F: Future<Error = E> + Send + 'a,
               E: Into<M::Error>
     {
@@ -665,17 +665,17 @@ impl<M: ManageConnection> Pool<M> {
 
     fn replenish_idle_connections_locked(pool: &Arc<SharedPool<M>>,
                                          internals: &mut PoolInternals<M::Connection>)
-                                         -> Box<Future<Item = (), Error = M::Error> + Send> {
+                                         -> impl Future<Item = (), Error = M::Error> + Send {
         let slots_available = pool.statics.max_size - internals.num_conns - internals.pending_conns;
         let idle = internals.conns.len() as u32;
         let desired = pool.statics.min_idle.unwrap_or(0);
         let f = FuturesUnordered::from_iter((idle..
                                              max(idle, min(desired, idle + slots_available)))
             .map(|_| add_connection(pool, internals)));
-        Box::new(f.fold((), |_, _| Ok(())))
+        f.fold((), |_, _| Ok(()))
     }
 
-    fn replenish_idle_connections(&self) -> Box<Future<Item = (), Error = M::Error> + Send> {
+    fn replenish_idle_connections(&self) -> impl Future<Item = (), Error = M::Error> + Send {
         let mut locked = self.inner.internals.lock().unwrap();
         Pool::replenish_idle_connections_locked(&self.inner, &mut locked)
     }
@@ -701,7 +701,7 @@ impl<M: ManageConnection> Pool<M> {
     /// the construction of this pool, so it must be `Send`. The closure's return
     /// value need not be `Send` as it will live only on the tokio event loop.
     /// The return value of this function must be polled on the calling thread.
-    pub fn run<'a, T, E, U, F>(&self, f: F) -> Box<Future<Item = T, Error = E> + 'a>
+    pub fn run<'a, T, E, U, F>(&self, f: F) -> impl Future<Item = T, Error = E> + 'a
         where F: FnOnce(M::Connection) -> U + 'a,
               U: IntoFuture<Item = (T, M::Connection), Error = (E, M::Connection)> + 'a,
               E: From<M::Error> + 'a,
@@ -709,7 +709,7 @@ impl<M: ManageConnection> Pool<M> {
     {
         let inner = self.inner.clone();
         let inner2 = inner.clone();
-        Box::new(lazy(move || {
+        lazy(move || {
                 let lock = lock_floating(&inner);
                 get_idle_connection(lock).then(move |r| {
                     let f: Box<Future<Item = Conn<M::Connection>, Error = M::Error>> = match r {
@@ -758,7 +758,7 @@ impl<M: ManageConnection> Pool<M> {
                         }
                         r
                     })
-            }))
+            })
     }
 
     /// Get a new dedicated connection that will not be managed by the pool.
@@ -767,14 +767,14 @@ impl<M: ManageConnection> Pool<M> {
     ///
     /// This method allows reusing the manager's configuration but otherwise
     /// bypassing the pool
-    pub fn dedicated_connection(&self) -> Box<Future<Item = M::Connection, Error = M::Error> + 'static> {
+    pub fn dedicated_connection(&self) -> impl Future<Item = M::Connection, Error = M::Error> + 'static {
         let inner = self.inner.clone();
         let event_loop = &self.inner.event_loop;
 
-        match event_loop.handle() {
+        let v: Box<Future<Item = M::Connection, Error = M::Error> + 'static> = match event_loop.handle() {
             // We're being called on the event loop.
             Some(handle) => {
-                Box::new(inner.manager.connect(handle))
+                inner.manager.connect(handle)
             },
             // We're being called from somewhere else.
             None => {
@@ -788,6 +788,8 @@ impl<M: ManageConnection> Pool<M> {
                 });
                 Box::new(rx.then(|r| r.unwrap()))
             }
-        }
+        };
+
+        v
     }
 }
