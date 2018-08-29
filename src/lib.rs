@@ -492,7 +492,7 @@ fn get_idle_connection<M>
         let f: Box<Future<Item = Loop<_, _>, Error = _>> = if let Some(mut conn) = internals.conns
             .pop_front() {
             // Spin up a new connection if necessary to retain our minimum idle count
-            let pool = internals.owner().clone();
+            let pool = internals.as_owner().clone();
             if internals.num_conns + internals.pending_conns < pool.statics.max_size {
                 let f = Pool::replenish_idle_connections_locked(&pool, &mut internals);
                 pool.proxy_or_dispatch(pool.sink_error(f));
