@@ -6,9 +6,9 @@ authors = ["Kyle Huey <khuey@kylehuey.com>"]
 [dependencies]
 bb8 = { path = ".." }
 futures = "0.1"
-postgres-shared = { git = "https://github.com/sfackler/rust-postgres" }
+postgres-shared = { git = "https://github.com/sfackler/rust-postgres", rev = "5ad78500095c0a9a59533b9164f46edd23cb9e1b" }
 tokio-core = "0.1"
-tokio-postgres = { git = "https://github.com/sfackler/rust-postgres" }
+tokio-postgres = { git = "https://github.com/sfackler/rust-postgres", rev = "5ad78500095c0a9a59533b9164f46edd23cb9e1b" }
 
 [dev-dependencies]
 futures-state-stream = "0.2"
