@@ -292,6 +292,7 @@ impl<M: ManageConnection> Builder<M> {
 }
 
 /// The pool data that must be protected by a lock.
+#[allow(missing_debug_implementations)]
 struct PoolInternals<C> {
     waiters: VecDeque<oneshot::Sender<Conn<C>>>,
     conns: VecDeque<IdleConn<C>>,
@@ -319,6 +320,7 @@ impl<C> PoolInternals<C> {
 }
 
 /// The guts of a `Pool`.
+#[allow(missing_debug_implementations)]
 struct SharedPool<M: ManageConnection> {
     statics: Builder<M>,
     manager: M,
