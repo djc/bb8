@@ -53,7 +53,7 @@ impl bb8::ManageConnection for PostgresConnectionManager {
     fn is_valid
         (&self,
          conn: Self::Connection)
-         -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)>> {
+         -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send> {
         conn.batch_execute("")
     }
 

@@ -54,7 +54,7 @@ pub trait ManageConnection: Send + Sync + 'static {
     fn is_valid(
         &self,
         conn: Self::Connection,
-    ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)>>;
+    ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>;
     /// Synchronously determine if the connection is no longer usable, if possible.
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
     /// Produce an error representing a connection timeout.
@@ -102,17 +102,26 @@ impl fmt::Debug for State {
 }
 
 #[derive(Debug)]
-struct Conn<C> {
+struct Conn<C>
+where
+    C: Send,
+{
     conn: C,
     birth: Instant,
 }
 
-struct IdleConn<C> {
+struct IdleConn<C>
+where
+    C: Send,
+{
     conn: Conn<C>,
     idle_start: Instant,
 }
 
-impl<C> IdleConn<C> {
+impl<C> IdleConn<C>
+where
+    C: Send,
+{
     fn make_idle(conn: Conn<C>) -> IdleConn<C> {
         let now = Instant::now();
         IdleConn {
@@ -286,7 +295,7 @@ impl<M: ManageConnection> Builder<M> {
         self,
         manager: M,
         event_loop: Remote,
-    ) -> Box<Future<Item = Pool<M>, Error = M::Error>> {
+    ) -> Box<Future<Item = Pool<M>, Error = M::Error> + Send> {
         let (p, f) = self.build_inner(manager, event_loop);
         Box::new(f.map(|_| p))
     }
@@ -304,14 +313,20 @@ impl<M: ManageConnection> Builder<M> {
 
 /// The pool data that must be protected by a lock.
 #[allow(missing_debug_implementations)]
-struct PoolInternals<C> {
+struct PoolInternals<C>
+where
+    C: Send,
+{
     waiters: VecDeque<oneshot::Sender<Conn<C>>>,
     conns: VecDeque<IdleConn<C>>,
     num_conns: u32,
     pending_conns: u32,
 }
 
-impl<C> PoolInternals<C> {
+impl<C> PoolInternals<C>
+where
+    C: Send,
+{
     fn put_idle_conn(&mut self, mut conn: IdleConn<C>) {
         loop {
             if let Some(waiter) = self.waiters.pop_front() {
@@ -332,7 +347,10 @@ impl<C> PoolInternals<C> {
 
 /// The guts of a `Pool`.
 #[allow(missing_debug_implementations)]
-struct SharedPool<M: ManageConnection> {
+struct SharedPool<M: ManageConnection>
+where
+    M: Send,
+{
     statics: Builder<M>,
     manager: M,
     event_loop: Remote,
@@ -363,40 +381,44 @@ impl<M: ManageConnection> SharedPool<M> {
         Box::new(f.map_err(move |e| sink.sink(e.into())))
     }
 
-    fn or_timeout<'a, F>(&self, f: F) -> Box<Future<Item = Option<F::Item>, Error = F::Error> + 'a>
+    fn or_timeout<'a, F>(
+        &self,
+        f: F,
+    ) -> Box<Future<Item = Option<F::Item>, Error = F::Error> + Send + 'a>
     where
         F: IntoFuture + Send,
-        F::Future: 'a,
-        F::Item: 'a,
-        F::Error: 'a,
+        F::Future: Send + 'a,
+        F::Item: Send + 'a,
+        F::Error: Send + 'a,
     {
         let runnable = f.into_future();
         let event_loop = &self.event_loop;
-        let f: Box<Future<Item = Option<F::Item>, Error = F::Error>> = match event_loop.handle() {
-            // We're being called on the event loop. We can set up a timeout directly.
-            Some(handle) => {
-                let timeout = Timeout::new(self.statics.connection_timeout, &handle).unwrap();
-                Box::new(runnable.select2(timeout).then(|r| match r {
-                    Ok(Either::A((item, _))) => Ok(Some(item)),
-                    Err(Either::A((error, _))) => Err(error),
-                    Ok(Either::B(_)) | Err(Either::B(_)) => Ok(None),
-                }))
-            }
-            // We're being called from somewhere else.
-            None => {
-                let (tx, rx) = oneshot::channel();
-                let timeout = self.statics.connection_timeout;
-                event_loop.spawn(move |handle| {
-                    let timeout = Timeout::new(timeout, handle).unwrap();
-                    timeout.then(|_| tx.send(()))
-                });
-                Box::new(runnable.select2(rx).then(|r| match r {
-                    Ok(Either::A((item, _))) => Ok(Some(item)),
-                    Err(Either::A((error, _))) => Err(error),
-                    Ok(Either::B(_)) | Err(Either::B(_)) => Ok(None),
-                }))
-            }
-        };
+        let f: Box<Future<Item = Option<F::Item>, Error = F::Error> + Send> =
+            match event_loop.handle() {
+                // We're being called on the event loop. We can set up a timeout directly.
+                Some(handle) => {
+                    let timeout = Timeout::new(self.statics.connection_timeout, &handle).unwrap();
+                    Box::new(runnable.select2(timeout).then(|r| match r {
+                        Ok(Either::A((item, _))) => Ok(Some(item)),
+                        Err(Either::A((error, _))) => Err(error),
+                        Ok(Either::B(_)) | Err(Either::B(_)) => Ok(None),
+                    }))
+                }
+                // We're being called from somewhere else.
+                None => {
+                    let (tx, rx) = oneshot::channel();
+                    let timeout = self.statics.connection_timeout;
+                    event_loop.spawn(move |handle| {
+                        let timeout = Timeout::new(timeout, handle).unwrap();
+                        timeout.then(|_| tx.send(()))
+                    });
+                    Box::new(runnable.select2(rx).then(|r| match r {
+                        Ok(Either::A((item, _))) => Ok(Some(item)),
+                        Err(Either::A((error, _))) => Err(error),
+                        Ok(Either::B(_)) | Err(Either::B(_)) => Ok(None),
+                    }))
+                }
+            };
         f
     }
 }
@@ -498,18 +520,16 @@ where
 }
 
 fn get_idle_connection<M>(
-    internals: OwningHandle<Arc<SharedPool<M>>, MutexGuard<'static, PoolInternals<M::Connection>>>,
-) -> Box<
-    Future<
-        Item = Conn<M::Connection>,
-        Error = OwningHandle<Arc<SharedPool<M>>, MutexGuard<'static, PoolInternals<M::Connection>>>,
-    >,
->
+    inner: Arc<SharedPool<M>>,
+) -> Box<Future<Item = Conn<M::Connection>, Error = Arc<SharedPool<M>>> + Send>
 where
-    M: ManageConnection,
+    M: ManageConnection + Send,
+    M::Connection: Send,
+    M::Error: Send,
 {
-    Box::new(loop_fn(internals, |mut internals| {
-        let f: Box<Future<Item = Loop<_, _>, Error = _>> =
+    Box::new(loop_fn(inner, |inner| {
+        let mut internals = lock_floating(&inner);
+        let f: Box<Future<Item = Loop<_, _>, Error = _> + Send> =
             if let Some(mut conn) = internals.conns.pop_front() {
                 // Spin up a new connection if necessary to retain our minimum idle count
                 let pool = internals.as_owner().clone();
@@ -540,7 +560,7 @@ where
                                             vec![conn],
                                         );
                                     }
-                                    Ok(Loop::Continue(lock))
+                                    Ok(Loop::Continue(inner))
                                 }
                             }),
                     )
@@ -548,7 +568,7 @@ where
                     Box::new(Ok(Loop::Break(conn.conn)).into_future())
                 }
             } else {
-                Box::new(Err(internals).into_future())
+                Box::new(Err(inner).into_future())
             };
         f
     }))
@@ -732,26 +752,27 @@ impl<M: ManageConnection> Pool<M> {
     ///
     /// The closure will be executed on the tokio event loop provided during
     /// the construction of this pool, so it must be `Send`. The closure's return
-    /// value need not be `Send` as it will live only on the tokio event loop.
-    /// The return value of this function must be polled on the calling thread.
-    pub fn run<'a, T, E, U, F>(&self, f: F) -> Box<Future<Item = T, Error = E> + 'a>
+    /// value is also `Send` so that the Future can be consumed in contexts where
+    /// `Send` is needed.
+    pub fn run<'a, T, E, U, F>(&self, f: F) -> Box<Future<Item = T, Error = E> + Send + 'a>
     where
-        F: FnOnce(M::Connection) -> U + 'a,
-        U: IntoFuture<Item = (T, M::Connection), Error = (E, M::Connection)> + 'a,
-        E: From<M::Error> + 'a,
-        T: 'a,
+        F: FnOnce(M::Connection) -> U + Send + 'a,
+        U: IntoFuture<Item = (T, M::Connection), Error = (E, M::Connection)> + Send + 'a,
+        U::Future: Send + 'a,
+        E: From<M::Error> + Send + 'a,
+        T: Send + 'a,
     {
         let inner = self.inner.clone();
         let inner2 = inner.clone();
         Box::new(
             lazy(move || {
-                let lock = lock_floating(&inner);
-                get_idle_connection(lock).then(move |r| {
+                get_idle_connection(inner).then(move |r| {
                     let f: Box<
-                        Future<Item = Conn<M::Connection>, Error = M::Error>,
+                        Future<Item = Conn<M::Connection>, Error = M::Error> + Send,
                     > = match r {
                         Ok(conn) => Box::new(ok(conn)),
-                        Err(mut locked) => {
+                        Err(mut inner) => {
+                            let mut locked = lock_floating(&inner);
                             let (tx, rx) = oneshot::channel();
                             locked.waiters.push_back(tx);
                             if locked.num_conns + locked.pending_conns < inner.statics.max_size {
