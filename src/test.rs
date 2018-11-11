@@ -50,7 +50,7 @@ where
     fn is_valid(
         &self,
         conn: Self::Connection,
-    ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)>> {
+    ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send> {
         Box::new(ok(conn))
     }
 
@@ -97,7 +97,7 @@ where
     fn is_valid(
         &self,
         conn: Self::Connection,
-    ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)>> {
+    ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send> {
         Box::new(ok(conn))
     }
 
@@ -246,7 +246,8 @@ fn test_drop_on_broken() {
         fn is_valid(
             &self,
             conn: Self::Connection,
-        ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)>> {
+        ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
+        {
             Box::new(ok(conn))
         }
 
@@ -372,7 +373,8 @@ fn test_now_invalid() {
         fn is_valid(
             &self,
             conn: Self::Connection,
-        ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)>> {
+        ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
+        {
             let r = if INVALID.load(Ordering::SeqCst) {
                 Err((Error, conn))
             } else {
@@ -587,7 +589,8 @@ fn test_conns_drop_on_pool_drop() {
         fn is_valid(
             &self,
             conn: Self::Connection,
-        ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)>> {
+        ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
+        {
             Box::new(ok(conn))
         }
 
