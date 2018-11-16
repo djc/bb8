@@ -393,33 +393,30 @@ impl<M: ManageConnection> SharedPool<M> {
     {
         let runnable = f.into_future();
         let event_loop = &self.event_loop;
-        let f: Box<Future<Item = Option<F::Item>, Error = F::Error> + Send> =
-            match event_loop.handle() {
-                // We're being called on the event loop. We can set up a timeout directly.
-                Some(handle) => {
-                    let timeout = Timeout::new(self.statics.connection_timeout, &handle).unwrap();
-                    Box::new(runnable.select2(timeout).then(|r| match r {
-                        Ok(Either::A((item, _))) => Ok(Some(item)),
-                        Err(Either::A((error, _))) => Err(error),
-                        Ok(Either::B(_)) | Err(Either::B(_)) => Ok(None),
-                    }))
-                }
-                // We're being called from somewhere else.
-                None => {
-                    let (tx, rx) = oneshot::channel();
-                    let timeout = self.statics.connection_timeout;
-                    event_loop.spawn(move |handle| {
-                        let timeout = Timeout::new(timeout, handle).unwrap();
-                        timeout.then(|_| tx.send(()))
-                    });
-                    Box::new(runnable.select2(rx).then(|r| match r {
-                        Ok(Either::A((item, _))) => Ok(Some(item)),
-                        Err(Either::A((error, _))) => Err(error),
-                        Ok(Either::B(_)) | Err(Either::B(_)) => Ok(None),
-                    }))
-                }
-            };
-        f
+        let f = match event_loop.handle() {
+            // We're being called on the event loop. We can set up a timeout directly.
+            Some(handle) => {
+                let timeout = Timeout::new(self.statics.connection_timeout, &handle).unwrap()
+                    .map_err(|_| futures::Canceled);
+                Either::A(timeout)
+            }
+            // We're being called from somewhere else.
+            None => {
+                let (tx, rx) = oneshot::channel();
+                let timeout = self.statics.connection_timeout;
+                event_loop.spawn(move |handle| {
+                    let timeout = Timeout::new(timeout, handle).unwrap();
+                    timeout.then(|_| tx.send(()))
+                });
+                Either::B(rx)
+            }
+        };
+
+        Box::new(runnable.select2(f).then(|r| match r {
+            Ok(Either::A((item, _))) => Ok(Some(item)),
+            Err(Either::A((error, _))) => Err(error),
+            Ok(Either::B(_)) | Err(Either::B(_)) => Ok(None),
+        }))
     }
 }
 
