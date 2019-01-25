@@ -5,68 +5,86 @@ pub extern crate bb8;
 pub extern crate tokio_postgres;
 
 extern crate futures;
-extern crate postgres_shared;
-extern crate tokio_core;
 
 use futures::Future;
-use tokio_core::reactor::Handle;
-use tokio_postgres::{Connection, Error, TlsMode};
-use tokio_postgres::params::{ConnectParams, IntoConnectParams};
+use tokio_postgres::{Client, Error, MakeTlsConnect, Socket, TlsConnect};
 
 use std::fmt;
 use std::io;
 
-type Result<T> = std::result::Result<T, Error>;
-
 /// A `bb8::ManageConnection` for `tokio_postgres::Connection`s.
-pub struct PostgresConnectionManager {
-    params: ConnectParams,
-    tls_mode: Box<Fn() -> TlsMode + Send + Sync>,
+pub struct PostgresConnectionManager<Tls>
+where
+    Tls: MakeTlsConnect<Socket>,
+{
+    params: String,
+    tls: Tls,
 }
 
-impl PostgresConnectionManager {
+impl<Tls> PostgresConnectionManager<Tls>
+where
+    Tls: MakeTlsConnect<Socket>,
+{
     /// Create a new `PostgresConnectionManager`.
-    pub fn new<F, T>(params: T, tls_mode: F) -> Result<PostgresConnectionManager>
+    pub fn new<T>(params: T, tls: Tls) -> PostgresConnectionManager<Tls>
     where
-        T: IntoConnectParams,
-        F: Fn() -> TlsMode + Send + Sync + 'static,
+        T: ToString,
     {
-        Ok(PostgresConnectionManager {
-            params: params.into_connect_params()
-                .map_err(postgres_shared::error::connect)?,
-            tls_mode: Box::new(tls_mode),
-        })
+        PostgresConnectionManager {
+            params: params.to_string(),
+            tls: tls,
+        }
     }
 }
 
-impl bb8::ManageConnection for PostgresConnectionManager {
-    type Connection = Connection;
+impl<Tls> bb8::ManageConnection for PostgresConnectionManager<Tls>
+where
+    Tls: MakeTlsConnect<Socket> + Clone + Send + Sync + 'static,
+    <Tls as MakeTlsConnect<Socket>>::Stream: Send + Sync,
+    <Tls as MakeTlsConnect<Socket>>::TlsConnect: Send,
+    <<Tls as MakeTlsConnect<Socket>>::TlsConnect as TlsConnect<Socket>>::Future: Send,
+{
+    type Connection = Client;
     type Error = Error;
 
     fn connect(
         &self,
-        handle: Handle,
-    ) -> Box<Future<Item = Self::Connection, Error = Self::Error> + 'static> {
-        Connection::connect(self.params.clone(), (self.tls_mode)(), &handle)
+    ) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send + 'static> {
+        Box::new(tokio_postgres::connect(&self.params, self.tls.clone()).map(
+            |(client, connection)| {
+                // The connection object performs the actual communication with the database,
+                // so spawn it off to run on its own.
+                tokio::spawn(connection.map_err(|_| panic!()));
+
+                client
+            },
+        ))
     }
 
-    fn is_valid
-        (&self,
-         conn: Self::Connection)
-         -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send> {
-        conn.batch_execute("")
+    fn is_valid(
+        &self,
+        mut conn: Self::Connection,
+    ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send> {
+        let f = conn.batch_execute("");
+        Box::new(f.then(move |r| match r {
+            Ok(_) => Ok(conn),
+            Err(e) => Err((e, conn)),
+        }))
     }
 
     fn has_broken(&self, conn: &mut Self::Connection) -> bool {
-        conn.is_desynchronized()
+        conn.is_closed()
     }
 
     fn timed_out(&self) -> Self::Error {
-        postgres_shared::error::io(io::ErrorKind::TimedOut.into())
+        tokio_postgres::Error::connect(io::ErrorKind::TimedOut.into())
     }
 }
 
-impl fmt::Debug for PostgresConnectionManager {
+impl<Tls> fmt::Debug for PostgresConnectionManager<Tls>
+where
+    Tls: MakeTlsConnect<Socket>,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("PostgresConnectionManager")
             .field("params", &self.params)

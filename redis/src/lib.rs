@@ -5,10 +5,9 @@ pub extern crate bb8;
 pub extern crate redis;
 
 extern crate futures;
-extern crate tokio_core;
+extern crate tokio;
 
 use futures::{Future, IntoFuture};
-use tokio_core::reactor::Handle;
 
 use redis::async::Connection;
 use redis::{Client, RedisError};
@@ -71,8 +70,7 @@ impl bb8::ManageConnection for RedisConnectionManager {
 
     fn connect(
         &self,
-        _handle: Handle,
-    ) -> Box<Future<Item = Self::Connection, Error = Self::Error> + 'static> {
+    ) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send + 'static> {
         Box::new(self.client.get_async_connection().map(|conn| Some(conn)))
     }
 

@@ -1,6 +1,6 @@
 [package]
 name = "bb8"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Kyle Huey <khuey@kylehuey.com>"]
 description = "r2d2, but for async tokio based connections"
 license = "MIT"
@@ -9,7 +9,11 @@ repository = "https://github.com/khuey/bb8"
 [dependencies]
 futures = "0.1"
 owning_ref = { git = "https://github.com/khuey/owning-ref-rs", branch = "owning_handle_owner" }
-tokio-core = "0.1"
+tokio-executor = "0.1"
+tokio-timer = "0.2.8"
+
+[dev-dependencies]
+tokio = "0.1.13"
 
 [workspace]
 members = [
