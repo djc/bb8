@@ -7,4 +7,4 @@ authors = ["Daniel Smith <smith.daniel.br@gmail.com>", "Kyle Huey <khuey@kylehue
 bb8 = { path = ".." }
 futures = "0.1"
 tokio = "0.1"
-redis = "0.9"
+redis = "^0.9"
