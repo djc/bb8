@@ -6,8 +6,9 @@ pub extern crate tokio_postgres;
 
 extern crate futures;
 
-use futures::Future;
-use tokio_postgres::{Client, Error, MakeTlsConnect, Socket, TlsConnect};
+use futures::prelude::*;
+use tokio_postgres::{Client, Error, Socket};
+use tokio_postgres::tls::{MakeTlsConnect, TlsConnect};
 
 use std::fmt;
 use std::io;
@@ -65,7 +66,8 @@ where
         &self,
         mut conn: Self::Connection,
     ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send> {
-        let f = conn.batch_execute("");
+        let f = conn.simple_query("")
+            .collect();
         Box::new(f.then(move |r| match r {
             Ok(_) => Ok(conn),
             Err(e) => Err((e, conn)),
