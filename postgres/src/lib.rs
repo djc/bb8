@@ -14,6 +14,7 @@ use std::fmt;
 use std::io;
 
 /// A `bb8::ManageConnection` for `tokio_postgres::Connection`s.
+#[derive(Clone)]
 pub struct PostgresConnectionManager<Tls>
 where
     Tls: MakeTlsConnect<Socket>,
