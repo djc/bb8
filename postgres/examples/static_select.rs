@@ -32,7 +32,7 @@ fn main() {
                             let f = connection
                                 .query(&select, &[])
                                 .for_each(|row| {
-                                    println!("result: {}", row.get::<usize, String>(0));
+                                    println!("result: {}", row.get::<usize, i32>(0));
                                     Ok(())
                                 })
                                 .then(move |r| match r {
