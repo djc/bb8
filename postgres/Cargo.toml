@@ -1,6 +1,6 @@
 [package]
 name = "bb8-postgres"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Kyle Huey <khuey@kylehuey.com>"]
 
 [features]
