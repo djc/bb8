@@ -493,7 +493,7 @@ where
         let mut internals = lock_floating(&inner);
         if let Some(conn) = internals.conns.pop_front() {
             // Spin up a new connection if necessary to retain our minimum idle count
-            let pool = internals.as_owner().clone();
+            let pool = inner.clone();
             if internals.num_conns + internals.pending_conns < pool.statics.max_size {
                 let f = Pool::replenish_idle_connections_locked(&pool, &mut internals);
                 pool.spawn(pool.sink_error(f));
