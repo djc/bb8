@@ -12,7 +12,7 @@ authors = ["Kyle Huey <khuey@kylehuey.com>"]
 "with-uuid-0_7" = ["tokio-postgres/with-uuid-0_7"]
 
 [dependencies]
-bb8 = { path = ".." }
+bb8 = "0.3"
 futures = "0.1"
 tokio = "0.1"
 tokio-postgres = "0.4.0-rc.2"

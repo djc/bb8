@@ -4,7 +4,7 @@ version = "0.3.0"
 authors = ["Daniel Smith <smith.daniel.br@gmail.com>", "Kyle Huey <khuey@kylehuey.com>"]
 
 [dependencies]
-bb8 = { path = ".." }
+bb8 = "0.3"
 futures = "0.1"
 tokio = "0.1"
 redis = ">=0.9"
