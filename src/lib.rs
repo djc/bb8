@@ -12,7 +12,6 @@
 #![deny(missing_docs, missing_debug_implementations)]
 
 extern crate futures;
-extern crate owning_ref;
 extern crate tokio_executor;
 extern crate tokio_timer;
 
@@ -30,7 +29,6 @@ use futures::future::{lazy, loop_fn, ok, Either, Loop};
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use futures::sync::oneshot;
-use owning_ref::OwningHandle;
 use tokio_executor::spawn;
 use tokio_timer::{Interval, Timeout};
 
@@ -469,18 +467,6 @@ where
     do_it(pool)
 }
 
-fn lock_floating<M>(
-    pool: &Arc<SharedPool<M>>,
-) -> OwningHandle<Arc<SharedPool<M>>, MutexGuard<'static, PoolInternals<M::Connection>>>
-where
-    M: ManageConnection,
-{
-    OwningHandle::new_with_fn(pool.clone(), |pool| {
-        let pool = unsafe { &*pool };
-        pool.internals.lock().unwrap()
-    })
-}
-
 fn get_idle_connection<M>(
     inner: Arc<SharedPool<M>>,
 ) -> impl Future<Item = Conn<M::Connection>, Error = Arc<SharedPool<M>>> + Send
@@ -490,10 +476,10 @@ where
     M::Error: Send,
 {
     loop_fn(inner, |inner| {
-        let mut internals = lock_floating(&inner);
+        let pool = inner.clone();
+        let mut internals = inner.internals.lock().unwrap();
         if let Some(conn) = internals.conns.pop_front() {
             // Spin up a new connection if necessary to retain our minimum idle count
-            let pool = inner.clone();
             if internals.num_conns + internals.pending_conns < pool.statics.max_size {
                 let f = Pool::replenish_idle_connections_locked(&pool, &mut internals);
                 pool.spawn(pool.sink_error(f));
@@ -513,15 +499,15 @@ where
                                 birth: birth,
                             })),
                             Err((_, conn)) => {
-                                let mut lock = lock_floating(&pool);
                                 {
+                                    let mut locked = pool.internals.lock().unwrap();
                                     drop_connections(
                                         &pool,
-                                        OwningHandle::deref_once_mut(&mut lock),
+                                        &mut locked,
                                         vec![conn],
                                     );
                                 }
-                                Ok(Loop::Continue(inner))
+                                Ok(Loop::Continue(pool))
                             }
                         }),
                 )
@@ -529,7 +515,7 @@ where
                 Either::B(Ok(Loop::Break(conn.conn)).into_future())
             }
         } else {
-            Either::B(Err(inner).into_future())
+            Either::B(Err(pool).into_future())
         }
     })
 }
@@ -732,12 +718,14 @@ impl<M: ManageConnection> Pool<M> {
             get_idle_connection(inner).then(move |r| match r {
                 Ok(conn) => Either::A(ok(conn)),
                 Err(inner) => {
-                    let mut locked = lock_floating(&inner);
                     let (tx, rx) = oneshot::channel();
-                    locked.waiters.push_back(tx);
-                    if locked.num_conns + locked.pending_conns < inner.statics.max_size {
-                        let f = add_connection(&inner, &mut locked);
-                        inner.spawn(inner.sink_error(f));
+                    {
+                        let mut locked = inner.internals.lock().unwrap();
+                        locked.waiters.push_back(tx);
+                        if locked.num_conns + locked.pending_conns < inner.statics.max_size {
+                            let f = add_connection(&inner, &mut locked);
+                            inner.spawn(inner.sink_error(f));
+                        }
                     }
 
                     Either::B(inner.or_timeout(rx).then(move |r| match r {

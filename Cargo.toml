@@ -8,7 +8,6 @@ repository = "https://github.com/khuey/bb8"
 
 [dependencies]
 futures = "0.1"
-owning_ref = { git = "https://github.com/khuey/owning-ref-rs", branch = "owning_handle_owner" }
 tokio-executor = "0.1"
 tokio-timer = "0.2"
 
