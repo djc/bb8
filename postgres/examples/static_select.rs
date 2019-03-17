@@ -25,6 +25,7 @@ fn main() {
     tokio::run(lazy(|| {
         Pool::builder()
             .build(pg_mgr)
+            .map_err(|e| bb8::RunError::User(e))
             .and_then(|pool| {
                 pool.run(|mut connection| {
                     connection.prepare("SELECT 1").then(move |r| match r {

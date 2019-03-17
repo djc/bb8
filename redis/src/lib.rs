@@ -12,7 +12,6 @@ use futures::{Future, IntoFuture};
 use redis::async::Connection;
 use redis::{Client, RedisError};
 
-use std::io;
 use std::option::Option;
 
 type Result<T> = std::result::Result<T, RedisError>;
@@ -32,12 +31,15 @@ impl RedisPool {
     }
 
     /// Run the function with a connection provided by the pool.
-    pub fn run<'a, T, E, U, F>(&self, f: F) -> impl Future<Item = T, Error = E> + Send + 'a
+    pub fn run<'a, T, E, U, F>(
+        &self,
+        f: F,
+    ) -> impl Future<Item = T, Error = bb8::RunError<E>> + Send + 'a
     where
         F: FnOnce(Connection) -> U + Send + 'a,
         U: IntoFuture<Item = (Connection, T), Error = E> + 'a,
         U::Future: Send,
-        E: From<RedisError> + Send + 'a,
+        E: From<<RedisConnectionManager as bb8::ManageConnection>::Error> + Send + 'a,
         T: Send + 'a,
     {
         let f = move |conn: Option<Connection>| {
@@ -89,9 +91,5 @@ impl bb8::ManageConnection for RedisConnectionManager {
 
     fn has_broken(&self, conn: &mut Self::Connection) -> bool {
         conn.is_none()
-    }
-
-    fn timed_out(&self) -> Self::Error {
-        io::Error::new(io::ErrorKind::TimedOut, "RedisConnectionManager timed out").into()
     }
 }

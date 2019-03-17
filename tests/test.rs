@@ -19,7 +19,7 @@ use futures::Async;
 use tokio::runtime::current_thread::Runtime;
 use tokio::timer::Timeout;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Error;
 
 impl fmt::Display for Error {
@@ -68,10 +68,6 @@ where
     fn has_broken(&self, _: &mut Self::Connection) -> bool {
         false
     }
-
-    fn timed_out(&self) -> Self::Error {
-        Error
-    }
 }
 
 struct NthConnectionFailManager<C> {
@@ -114,10 +110,6 @@ where
 
     fn has_broken(&self, _: &mut Self::Connection) -> bool {
         false
-    }
-
-    fn timed_out(&self) -> Self::Error {
-        Error
     }
 }
 
@@ -266,10 +258,6 @@ fn test_drop_on_broken() {
         fn has_broken(&self, _: &mut Self::Connection) -> bool {
             true
         }
-
-        fn timed_out(&self) -> Self::Error {
-            Error
-        }
     }
 
     let mut event_loop = Runtime::new().unwrap();
@@ -302,7 +290,7 @@ fn test_initialization_failure() {
             .map(|_| ())
     }));
     assert!(e.is_err());
-    assert!(e.unwrap_err().to_string().contains("blammo"));
+    assert_eq!(e.unwrap_err(), Error);
 }
 
 #[test]
@@ -324,7 +312,7 @@ fn test_lazy_initialization_failure() {
         r.into_future()
     }));
     assert!(e.is_err());
-    assert!(e.unwrap_err().to_string().contains("blammo"));
+    assert_eq!(e.unwrap_err(), bb8::RunError::TimedOut);
 }
 
 #[test]
@@ -406,10 +394,6 @@ fn test_now_invalid() {
 
         fn has_broken(&self, _: &mut Self::Connection) -> bool {
             false
-        }
-
-        fn timed_out(&self) -> Self::Error {
-            Error
         }
     }
 
@@ -638,10 +622,6 @@ fn test_conns_drop_on_pool_drop() {
 
         fn has_broken(&self, _: &mut Self::Connection) -> bool {
             false
-        }
-
-        fn timed_out(&self) -> Self::Error {
-            Error
         }
     }
 

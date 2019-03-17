@@ -11,7 +11,6 @@ use tokio_postgres::tls::{MakeTlsConnect, TlsConnect};
 use tokio_postgres::{Client, Error, Socket};
 
 use std::fmt;
-use std::io;
 
 /// A `bb8::ManageConnection` for `tokio_postgres::Connection`s.
 #[derive(Clone)]
@@ -76,10 +75,6 @@ where
 
     fn has_broken(&self, conn: &mut Self::Connection) -> bool {
         conn.is_closed()
-    }
-
-    fn timed_out(&self) -> Self::Error {
-        tokio_postgres::Error::connect(io::ErrorKind::TimedOut.into())
     }
 }
 
