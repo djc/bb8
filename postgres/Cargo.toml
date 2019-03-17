@@ -15,7 +15,7 @@ authors = ["Kyle Huey <khuey@kylehuey.com>"]
 bb8 = { path = ".." }
 futures = "0.1"
 tokio = "0.1"
-tokio-postgres = { git = "https://github.com/khuey/rust-postgres", branch = "puberror" }
+tokio-postgres = "0.4.0-rc.2"
 
 [dev-dependencies]
 futures-state-stream = "0.2"
