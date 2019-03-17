@@ -501,11 +501,7 @@ where
                             Err((_, conn)) => {
                                 {
                                     let mut locked = pool.internals.lock().unwrap();
-                                    drop_connections(
-                                        &pool,
-                                        &mut locked,
-                                        vec![conn],
-                                    );
+                                    drop_connections(&pool, &mut locked, vec![conn]);
                                 }
                                 Ok(Loop::Continue(pool))
                             }
