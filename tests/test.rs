@@ -6,7 +6,7 @@ use bb8::*;
 
 use std::iter::FromIterator;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering, ATOMIC_BOOL_INIT, ATOMIC_USIZE_INIT};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use std::{error, fmt, mem};
@@ -226,7 +226,7 @@ fn test_is_send_sync() {
 
 #[test]
 fn test_drop_on_broken() {
-    static DROPPED: AtomicBool = ATOMIC_BOOL_INIT;
+    static DROPPED: AtomicBool = AtomicBool::new(false);
 
     #[derive(Default)]
     struct Connection;
@@ -359,7 +359,7 @@ fn test_get_timeout() {
 
 #[test]
 fn test_now_invalid() {
-    static INVALID: AtomicBool = ATOMIC_BOOL_INIT;
+    static INVALID: AtomicBool = AtomicBool::new(false);
 
     struct Handler;
 
@@ -466,7 +466,7 @@ fn test_now_invalid() {
 
 #[test]
 fn test_max_lifetime() {
-    static DROPPED: AtomicUsize = ATOMIC_USIZE_INIT;
+    static DROPPED: AtomicUsize = AtomicUsize::new(0);
 
     #[derive(Default)]
     struct Connection;
@@ -592,7 +592,7 @@ fn test_min_idle() {
 
 #[test]
 fn test_conns_drop_on_pool_drop() {
-    static DROPPED: AtomicUsize = ATOMIC_USIZE_INIT;
+    static DROPPED: AtomicUsize = AtomicUsize::new(0);
 
     struct Connection;
 
