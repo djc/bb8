@@ -68,8 +68,8 @@ impl<E> fmt::Display for RunError<E>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            RunError::User(ref err) => write!(f, "User error: {}", err),
-            RunError::TimedOut => write!(f, "Timed Out"),
+            RunError::User(ref err) => fmt::Display::fmt(&err, f),
+            RunError::TimedOut => write!(f, "Timed out in bb8"),
         }
     }
 }
