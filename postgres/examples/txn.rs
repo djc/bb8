@@ -6,7 +6,7 @@ extern crate tokio;
 extern crate tokio_postgres;
 
 use bb8::Pool;
-use bb8_postgres::PostgresConnectionManager;
+use bb8_postgres::{PostgresConnectionManager, transaction};
 use futures::{
     future::{err, lazy, Either},
     Future, Stream,
@@ -27,44 +27,25 @@ fn main() {
             .build(pg_mgr)
             .map_err(|e| bb8::RunError::User(e))
             .and_then(|pool| {
-                pool.run(|mut connection| {
-                    connection.simple_query("BEGIN")
-                        .for_each(|_| Ok(()))
-                        .then(|r| match r {
-                            Ok(_) => Ok(connection),
-                            Err(e) => Err((e, connection)),
+                pool.run(|connection| {
+                    transaction(connection, |mut connection| {
+                        connection.prepare("SELECT 1").then(move |r| match r {
+                            Ok(select) => {
+                                let f = connection
+                                    .query(&select, &[])
+                                    .for_each(|row| {
+                                        println!("result: {}", row.get::<usize, i32>(0));
+                                        Ok(())
+                                    })
+                                    .then(move |r| match r {
+                                        Ok(_) => Ok(((), connection)),
+                                        Err(e) => Err((e, connection)),
+                                    });
+                                Either::A(f)
+                            }
+                            Err(e) => Either::B(err((e, connection))),
                         })
-                        .and_then(|mut connection| {
-                            connection.prepare("SELECT 1").then(move |r| match r {
-                                Ok(select) => {
-                                    let f = connection
-                                        .query(&select, &[])
-                                        .for_each(|row| {
-                                            println!("result: {}", row.get::<usize, i32>(0));
-                                            Ok(())
-                                        })
-                                        .then(move |r| match r {
-                                            Ok(_) => Ok(connection),
-                                            Err(e) => Err((e, connection)),
-                                        });
-                                    Either::A(f)
-                                }
-                                Err(e) => Either::B(err((e, connection))),
-                            })
-                        })
-                        .and_then(|mut connection| {
-                            connection.simple_query("COMMIT")
-                                .for_each(|_| Ok(()))
-                                .then(|r| match r {
-                                    Ok(_) => Ok(((), connection)),
-                                    Err(e) => Err((e, connection)),
-                                })
-                        })
-                        .or_else(|(e, mut connection)| {
-                            connection.simple_query("ROLLBACK")
-                                .for_each(|_| Ok(()))
-                                .then(|_| Err((e, connection)))
-                        })
+                    })
                 })
             })
             .map_err(|e| panic!("{:?}", e))
