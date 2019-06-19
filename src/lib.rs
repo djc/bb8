@@ -730,6 +730,23 @@ impl<M: ManageConnection> Pool<M> {
     /// the construction of this pool, so it must be `Send`. The closure's return
     /// value is also `Send` so that the Future can be consumed in contexts where
     /// `Send` is needed.
+    ///
+    /// # Futures 0.3 + Async/Await
+    ///
+    /// In order to use this with Futures 0.3 + async/await syntax, use `.boxed().compat()` on the inner future in order to convert it to a version 0.1 Future.
+    ///
+    /// ```ignore
+    /// // Note that this version of `futures` is 0.3
+    /// use futures::compat::{Future01CompatExt}; // trait provides `.compat()`
+    ///
+    /// async fn future_03_example(client: Client) -> Result<(String, Client), (Error, Client)> {
+    ///     Ok(("Example".to_string(), client))
+    /// }
+    ///
+    /// client.run(|client| {
+    ///     future_03_example(client).boxed().compat()
+    /// })
+    /// ```
     pub fn run<'a, T, E, U, F>(
         &self,
         f: F,
