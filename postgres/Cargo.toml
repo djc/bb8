@@ -22,3 +22,4 @@ tokio-postgres = "0.4.0-rc.2"
 
 [dev-dependencies]
 futures-state-stream = "0.2"
+hyper = "0.12"
