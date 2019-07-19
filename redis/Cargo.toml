@@ -7,7 +7,7 @@ license = "MIT"
 repository = "https://github.com/khuey/bb8"
 
 [dependencies]
-bb8 = "0.3"
+bb8 = { path = "../" }
 futures = "0.1"
 tokio = "0.1"
-redis = ">=0.9"
+redis = "0.11"
