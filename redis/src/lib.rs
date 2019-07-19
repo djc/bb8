@@ -9,7 +9,7 @@ extern crate tokio;
 
 use futures::{Future, IntoFuture};
 
-use redis::async::Connection;
+use redis::aio::Connection;
 use redis::{Client, RedisError};
 
 use std::option::Option;
