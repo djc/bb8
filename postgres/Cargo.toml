@@ -18,7 +18,7 @@ repository = "https://github.com/khuey/bb8"
 bb8 = { path = "../" }
 futures = "0.1"
 tokio = "0.1"
-tokio-postgres = "0.4.0-rc.2"
+tokio-postgres = "0.4.0-rc.3"
 
 [dev-dependencies]
 futures-state-stream = "0.2"
