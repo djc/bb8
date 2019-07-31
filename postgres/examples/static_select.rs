@@ -12,13 +12,16 @@ use futures::{
     Future, Stream,
 };
 
+use std::str::FromStr;
+
 // Select some static data from a Postgres DB
 //
 // The simplest way to start the db is using Docker:
 // docker run --name gotham-middleware-postgres -e POSTGRES_PASSWORD=mysecretpassword -p 5432:5432 -d postgres
 fn main() {
+    let config = tokio_postgres::config::Config::from_str("postgresql://postgres:mysecretpassword@localhost:5432").unwrap();
     let pg_mgr = PostgresConnectionManager::new(
-        "postgresql://postgres:mysecretpassword@localhost:5432",
+        config,
         tokio_postgres::NoTls,
     );
 

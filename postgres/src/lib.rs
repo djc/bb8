@@ -7,10 +7,12 @@ pub extern crate tokio_postgres;
 extern crate futures;
 
 use futures::prelude::*;
+use tokio_postgres::config::Config;
 use tokio_postgres::tls::{MakeTlsConnect, TlsConnect};
 use tokio_postgres::{Client, Error, Socket};
 
 use std::fmt;
+use std::str::FromStr;
 
 /// A `bb8::ManageConnection` for `tokio_postgres::Connection`s.
 #[derive(Clone)]
@@ -18,7 +20,7 @@ pub struct PostgresConnectionManager<Tls>
 where
     Tls: MakeTlsConnect<Socket>,
 {
-    params: String,
+    config: Config,
     tls: Tls,
 }
 
@@ -26,15 +28,22 @@ impl<Tls> PostgresConnectionManager<Tls>
 where
     Tls: MakeTlsConnect<Socket>,
 {
-    /// Create a new `PostgresConnectionManager`.
-    pub fn new<T>(params: T, tls: Tls) -> PostgresConnectionManager<Tls>
-    where
-        T: ToString,
+    /// Create a new `PostgresConnectionManager` with the specified `config`.
+    pub fn new(config: Config, tls: Tls) -> PostgresConnectionManager<Tls>
     {
         PostgresConnectionManager {
-            params: params.to_string(),
+            config: config,
             tls: tls,
         }
+    }
+
+    /// Create a new `PostgresConnectionManager`, parsing the config from `params`.
+    pub fn new_from_stringlike<T>(params: T, tls: Tls) -> Result<PostgresConnectionManager<Tls>, Error>
+        where T: ToString
+    {
+        let stringified_params = params.to_string();
+        let config = Config::from_str(&stringified_params)?;
+        Ok(Self::new(config, tls))
     }
 }
 
@@ -51,7 +60,7 @@ where
     fn connect(
         &self,
     ) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send + 'static> {
-        Box::new(tokio_postgres::connect(&self.params, self.tls.clone()).map(
+        Box::new(self.config.connect(self.tls.clone()).map(
             |(client, connection)| {
                 // The connection object performs the actual communication with the database,
                 // so spawn it off to run on its own.
@@ -84,7 +93,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("PostgresConnectionManager")
-            .field("params", &self.params)
+            .field("config", &self.config)
             .finish()
     }
 }

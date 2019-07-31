@@ -17,10 +17,10 @@ use futures::{
 // The simplest way to start the db is using Docker:
 // docker run --name gotham-middleware-postgres -e POSTGRES_PASSWORD=mysecretpassword -p 5432:5432 -d postgres
 fn main() {
-    let pg_mgr = PostgresConnectionManager::new(
+    let pg_mgr = PostgresConnectionManager::new_from_stringlike(
         "postgresql://postgres:mysecretpassword@localhost:5432",
         tokio_postgres::NoTls,
-    );
+    ).unwrap();
 
     tokio::run(lazy(|| {
         Pool::builder()

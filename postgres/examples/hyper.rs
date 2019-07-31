@@ -69,10 +69,10 @@ fn main() {
 
     hyper::rt::run(lazy(move || {
         // First start the bb8 pool.
-        let pg_mgr = PostgresConnectionManager::new(
+        let pg_mgr = PostgresConnectionManager::new_from_stringlike(
             "postgresql://postgres:mysecretpassword@localhost:5432",
             tokio_postgres::NoTls,
-        );
+        ).unwrap();
 
         Pool::builder()
             .build(pg_mgr)
