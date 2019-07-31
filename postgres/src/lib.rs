@@ -29,8 +29,7 @@ where
     Tls: MakeTlsConnect<Socket>,
 {
     /// Create a new `PostgresConnectionManager` with the specified `config`.
-    pub fn new(config: Config, tls: Tls) -> PostgresConnectionManager<Tls>
-    {
+    pub fn new(config: Config, tls: Tls) -> PostgresConnectionManager<Tls> {
         PostgresConnectionManager {
             config: config,
             tls: tls,
@@ -38,8 +37,12 @@ where
     }
 
     /// Create a new `PostgresConnectionManager`, parsing the config from `params`.
-    pub fn new_from_stringlike<T>(params: T, tls: Tls) -> Result<PostgresConnectionManager<Tls>, Error>
-        where T: ToString
+    pub fn new_from_stringlike<T>(
+        params: T,
+        tls: Tls,
+    ) -> Result<PostgresConnectionManager<Tls>, Error>
+    where
+        T: ToString,
     {
         let stringified_params = params.to_string();
         let config = Config::from_str(&stringified_params)?;
@@ -60,15 +63,17 @@ where
     fn connect(
         &self,
     ) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send + 'static> {
-        Box::new(self.config.connect(self.tls.clone()).map(
-            |(client, connection)| {
-                // The connection object performs the actual communication with the database,
-                // so spawn it off to run on its own.
-                tokio::spawn(connection.map_err(|_| panic!()));
+        Box::new(
+            self.config
+                .connect(self.tls.clone())
+                .map(|(client, connection)| {
+                    // The connection object performs the actual communication with the database,
+                    // so spawn it off to run on its own.
+                    tokio::spawn(connection.map_err(|_| panic!()));
 
-                client
-            },
-        ))
+                    client
+                }),
+        )
     }
 
     fn is_valid(

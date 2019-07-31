@@ -20,7 +20,8 @@ fn main() {
     let pg_mgr = PostgresConnectionManager::new_from_stringlike(
         "postgresql://postgres:mysecretpassword@localhost:5432",
         tokio_postgres::NoTls,
-    ).unwrap();
+    )
+    .unwrap();
 
     tokio::run(lazy(|| {
         Pool::builder()
@@ -28,7 +29,8 @@ fn main() {
             .map_err(|e| bb8::RunError::User(e))
             .and_then(|pool| {
                 pool.run(|mut connection| {
-                    connection.simple_query("BEGIN")
+                    connection
+                        .simple_query("BEGIN")
                         .for_each(|_| Ok(()))
                         .then(|r| match r {
                             Ok(_) => Ok(connection),
@@ -53,7 +55,8 @@ fn main() {
                             })
                         })
                         .and_then(|mut connection| {
-                            connection.simple_query("COMMIT")
+                            connection
+                                .simple_query("COMMIT")
                                 .for_each(|_| Ok(()))
                                 .then(|r| match r {
                                     Ok(_) => Ok(((), connection)),
@@ -61,7 +64,8 @@ fn main() {
                                 })
                         })
                         .or_else(|(e, mut connection)| {
-                            connection.simple_query("ROLLBACK")
+                            connection
+                                .simple_query("ROLLBACK")
                                 .for_each(|_| Ok(()))
                                 .then(|_| Err((e, connection)))
                         })

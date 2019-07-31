@@ -64,7 +64,8 @@ pub enum RunError<E> {
 }
 
 impl<E> fmt::Display for RunError<E>
-    where E: error::Error + 'static
+where
+    E: error::Error + 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -75,7 +76,8 @@ impl<E> fmt::Display for RunError<E>
 }
 
 impl<E> error::Error for RunError<E>
-    where E: error::Error  + 'static
+where
+    E: error::Error + 'static,
 {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {

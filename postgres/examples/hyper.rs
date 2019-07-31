@@ -14,8 +14,8 @@ use futures::{
     future::{err, lazy, Either},
     Future, Stream,
 };
-use hyper::{Body, Request, Response, Server};
 use hyper::service::service_fn;
+use hyper::{Body, Request, Response, Server};
 
 // Select some static data from a Postgres DB and return it via hyper.
 //
@@ -31,12 +31,12 @@ fn main() {
         let pool = pool.clone();
         service_fn(move |_: Request<Body>| {
             println!("Got request");
-            let locked = pool.lock()
-                .unwrap();
-            let pool = locked.as_ref()
+            let locked = pool.lock().unwrap();
+            let pool = locked
+                .as_ref()
                 .expect("bb8 should have been started before hyper");
-            let f: Box<Future<Item = Response<Body>, Error = hyper::Error> + Send> =
-                Box::new(pool.run(move |mut connection| {
+            let f: Box<Future<Item = Response<Body>, Error = hyper::Error> + Send> = Box::new(
+                pool.run(move |mut connection| {
                     connection.prepare("SELECT 1").then(move |r| match r {
                         Ok(select) => {
                             let f = connection
@@ -55,10 +55,15 @@ fn main() {
                         }
                         Err(e) => Either::B(err((e, connection))),
                     })
-                }).or_else(|e| {
+                })
+                .or_else(|e| {
                     println!("Sending error response");
                     Ok(Response::new(Body::from(format!("Internal error {:?}", e))))
-                }).map_err::<_, hyper::Error>(|_: bb8::RunError<tokio_postgres::Error>| unreachable!()));
+                })
+                .map_err::<_, hyper::Error>(
+                    |_: bb8::RunError<tokio_postgres::Error>| unreachable!(),
+                ),
+            );
             f
         })
     };
@@ -72,7 +77,8 @@ fn main() {
         let pg_mgr = PostgresConnectionManager::new_from_stringlike(
             "postgresql://postgres:mysecretpassword@localhost:5432",
             tokio_postgres::NoTls,
-        ).unwrap();
+        )
+        .unwrap();
 
         Pool::builder()
             .build(pg_mgr)
