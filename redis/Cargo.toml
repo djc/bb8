@@ -1,6 +1,6 @@
 [package]
 name = "bb8-redis"
-version = "0.3.2-pre"
+version = "0.4.0-pre"
 authors = ["Daniel Smith <smith.daniel.br@gmail.com>", "Kyle Huey <khuey@kylehuey.com>"]
 description = "r2d2-redis, but for async tokio based connections"
 license = "MIT"
