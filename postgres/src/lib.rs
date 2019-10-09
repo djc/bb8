@@ -36,53 +36,13 @@ where
             tls: tls,
         }
     }
-}
-
-impl<Tls> bb8::ManageConnection for PostgresConnectionManager<Tls>
-where
-    Tls: MakeTlsConnect<Socket> + Clone + Send + Sync + 'static,
-    <Tls as MakeTlsConnect<Socket>>::Stream: Send + Sync,
-    <Tls as MakeTlsConnect<Socket>>::TlsConnect: Send,
-    <<Tls as MakeTlsConnect<Socket>>::TlsConnect as TlsConnect<Socket>>::Future: Send,
-{
-    type Connection = Client;
-    type Error = Error;
-
-    fn connect(
-        &self,
-    ) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send + 'static> {
-        Box::new(tokio_postgres::connect(&self.params, self.tls.clone()).map(
-            |(client, connection)| {
-                // The connection object performs the actual communication with the database,
-                // so spawn it off to run on its own.
-                tokio::spawn(connection.map_err(|_| panic!()));
-
-                client
-            },
-        ))
-    }
-
-    fn is_valid(
-        &self,
-        mut conn: Self::Connection,
-    ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send> {
-        let f = conn.simple_query("").collect();
-        Box::new(f.then(move |r| match r {
-            Ok(_) => Ok(conn),
-            Err(e) => Err((e, conn)),
-        }))
-    }
-
-    fn has_broken(&self, conn: &mut Self::Connection) -> bool {
-        conn.is_closed()
-    }
 
     /// Run asynchronous into a Transaction
-    fn transaction<R, E, Fut, F>(mut connection: tokio_postgres::Client, f: F) -> impl Future<Item=(R, tokio_postgres::Client), Error=(E, tokio_postgres::Client)>
+    pub fn transaction<R, E, Fut, F>(mut connection: tokio_postgres::Client, f: F) -> impl Future<Item=(R, tokio_postgres::Client), Error=(E, tokio_postgres::Client)>
         where
             F: FnOnce(tokio_postgres::Client) -> Fut,
-            E: From<tokio_postgres::Error>
-            Fut: Future<Item=(R, tokio_postgres::Client), Error=(tokio_postgres::Error, tokio_postgres::Client)>,
+            E: From<tokio_postgres::Error>,
+            Fut: Future<Item=(R, tokio_postgres::Client), Error=(E, tokio_postgres::Client)>,
     {
         connection.simple_query("BEGIN")
             .for_each(|_| Ok(()))
@@ -106,6 +66,46 @@ where
                 connection.simple_query("ROLLBACK").for_each(|_| Ok(()))
                     .then(|_| Err((e.into(), connection)))
             })
+    }
+}
+
+impl<Tls> bb8::ManageConnection for PostgresConnectionManager<Tls>
+where
+    Tls: MakeTlsConnect<Socket> + Clone + Send + Sync + 'static,
+    <Tls as MakeTlsConnect<Socket>>::Stream: Send + Sync,
+    <Tls as MakeTlsConnect<Socket>>::TlsConnect: Send,
+    <<Tls as MakeTlsConnect<Socket>>::TlsConnect as TlsConnect<Socket>>::Future: Send,
+{
+    type Connection = Client;
+    type Error = Error;
+
+    fn connect(
+        &self,
+    ) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send + 'static> {
+        Box::new(tokio_postgres::connect(&self.params, self.tls.clone()).map(
+            |(client, connection)| {
+                // The connection object performs the actual communication with the database,
+                // so spawn it off to run on its own.
+                tokio::spawn(connection.map_err(|_| panic!()));
+
+                client
+            },
+        ))
+    }
+
+    fn is_valid(
+        &self,
+        mut conn: Self::Connection,
+    ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send> {
+        let f = conn.simple_query("").collect();
+        Box::new(f.then(move |r| match r {
+            Ok(_) => Ok(conn),
+            Err(e) => Err((e, conn)),
+        }))
+    }
+
+    fn has_broken(&self, conn: &mut Self::Connection) -> bool {
+        conn.is_closed()
     }
 }
 
