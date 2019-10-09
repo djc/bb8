@@ -54,14 +54,15 @@ where
     type Connection = C;
     type Error = Error;
 
-    fn connect(&self) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send> {
+    fn connect(&self) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send> {
         Box::new(ok(Default::default()))
     }
 
     fn is_valid(
         &self,
         conn: Self::Connection,
-    ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send> {
+    ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
+    {
         Box::new(ok(conn))
     }
 
@@ -91,7 +92,7 @@ where
     type Connection = C;
     type Error = Error;
 
-    fn connect(&self) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send> {
+    fn connect(&self) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send> {
         let mut n = self.n.lock().unwrap();
         if *n > 0 {
             *n -= 1;
@@ -104,7 +105,8 @@ where
     fn is_valid(
         &self,
         conn: Self::Connection,
-    ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send> {
+    ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
+    {
         Box::new(ok(conn))
     }
 
@@ -243,14 +245,14 @@ fn test_drop_on_broken() {
         type Connection = Connection;
         type Error = Error;
 
-        fn connect(&self) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send> {
+        fn connect(&self) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send> {
             Box::new(ok(Default::default()))
         }
 
         fn is_valid(
             &self,
             conn: Self::Connection,
-        ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
+        ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
         {
             Box::new(ok(conn))
         }
@@ -367,7 +369,7 @@ fn test_now_invalid() {
         type Connection = FakeConnection;
         type Error = Error;
 
-        fn connect(&self) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send> {
+        fn connect(&self) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send> {
             let r = if INVALID.load(Ordering::SeqCst) {
                 Err(Error)
             } else {
@@ -379,7 +381,7 @@ fn test_now_invalid() {
         fn is_valid(
             &self,
             conn: Self::Connection,
-        ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
+        ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
         {
             println!("Called is_valid");
             let r = if INVALID.load(Ordering::SeqCst) {
@@ -608,14 +610,14 @@ fn test_conns_drop_on_pool_drop() {
         type Connection = Connection;
         type Error = Error;
 
-        fn connect(&self) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send> {
+        fn connect(&self) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send> {
             Box::new(ok(Connection))
         }
 
         fn is_valid(
             &self,
             conn: Self::Connection,
-        ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
+        ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
         {
             Box::new(ok(conn))
         }

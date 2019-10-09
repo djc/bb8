@@ -72,14 +72,15 @@ impl bb8::ManageConnection for RedisConnectionManager {
 
     fn connect(
         &self,
-    ) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send + 'static> {
+    ) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send + 'static> {
         Box::new(self.client.get_async_connection().map(|conn| Some(conn)))
     }
 
     fn is_valid(
         &self,
         conn: Self::Connection,
-    ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send> {
+    ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
+    {
         // The connection should only be None after a failure.
         Box::new(
             redis::cmd("PING")

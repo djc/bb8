@@ -44,12 +44,12 @@ pub trait ManageConnection: Send + Sync + 'static {
     type Error: Send + 'static;
 
     /// Attempts to create a new connection.
-    fn connect(&self) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send>;
+    fn connect(&self) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send>;
     /// Determines if the connection is still connected to the database.
     fn is_valid(
         &self,
         conn: Self::Connection,
-    ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>;
+    ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>;
     /// Synchronously determine if the connection is no longer usable, if possible.
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
 }
@@ -94,7 +94,7 @@ pub trait ErrorSink<E>: fmt::Debug + Send + Sync + 'static {
     fn sink(&self, error: E);
 
     /// Clone this sink.
-    fn boxed_clone(&self) -> Box<ErrorSink<E>>;
+    fn boxed_clone(&self) -> Box<dyn ErrorSink<E>>;
 }
 
 /// An `ErrorSink` implementation that does nothing.
@@ -104,7 +104,7 @@ pub struct NopErrorSink;
 impl<E> ErrorSink<E> for NopErrorSink {
     fn sink(&self, _: E) {}
 
-    fn boxed_clone(&self) -> Box<ErrorSink<E>> {
+    fn boxed_clone(&self) -> Box<dyn ErrorSink<E>> {
         Box::new(self.clone())
     }
 }
@@ -173,7 +173,7 @@ pub struct Builder<M: ManageConnection> {
     /// The duration to wait to start a connection before giving up.
     connection_timeout: Duration,
     /// The error sink.
-    error_sink: Box<ErrorSink<M::Error>>,
+    error_sink: Box<dyn ErrorSink<M::Error>>,
     /// The time interval used to wake up and reap connections.
     reaper_rate: Duration,
     _p: PhantomData<M>,
@@ -284,7 +284,7 @@ impl<M: ManageConnection> Builder<M> {
     /// on the pool. This can be used to log and monitor failures.
     ///
     /// Defaults to `NopErrorSink`.
-    pub fn error_sink(mut self, error_sink: Box<ErrorSink<M::Error>>) -> Builder<M> {
+    pub fn error_sink(mut self, error_sink: Box<dyn ErrorSink<M::Error>>) -> Builder<M> {
         self.error_sink = error_sink;
         self
     }
@@ -554,7 +554,7 @@ fn drop_connections<'a, L, M>(
     pool: &Arc<SharedPool<M>>,
     mut internals: L,
     to_drop: Vec<M::Connection>,
-) -> Box<Future<Item = (), Error = M::Error> + Send>
+) -> Box<dyn Future<Item = (), Error = M::Error> + Send>
 where
     L: BorrowMut<MutexGuard<'a, PoolInternals<M::Connection>>>,
     M: ManageConnection,
@@ -587,7 +587,7 @@ fn drop_idle_connections<'a, M>(
     pool: &Arc<SharedPool<M>>,
     internals: MutexGuard<'a, PoolInternals<M::Connection>>,
     to_drop: Vec<IdleConn<M::Connection>>,
-) -> Box<Future<Item = (), Error = M::Error> + Send>
+) -> Box<dyn Future<Item = (), Error = M::Error> + Send>
 where
     M: ManageConnection,
 {

@@ -62,7 +62,7 @@ where
 
     fn connect(
         &self,
-    ) -> Box<Future<Item = Self::Connection, Error = Self::Error> + Send + 'static> {
+    ) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send + 'static> {
         Box::new(
             self.config
                 .connect(self.tls.clone())
@@ -79,7 +79,8 @@ where
     fn is_valid(
         &self,
         mut conn: Self::Connection,
-    ) -> Box<Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send> {
+    ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
+    {
         let f = conn.simple_query("").collect();
         Box::new(f.then(move |r| match r {
             Ok(_) => Ok(conn),
