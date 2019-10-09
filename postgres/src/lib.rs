@@ -76,6 +76,37 @@ where
     fn has_broken(&self, conn: &mut Self::Connection) -> bool {
         conn.is_closed()
     }
+
+    /// Run asynchronous into a Transaction
+    fn transaction<R, E, Fut, F>(mut connection: tokio_postgres::Client, f: F) -> impl Future<Item=(R, tokio_postgres::Client), Error=(E, tokio_postgres::Client)>
+        where
+            F: FnOnce(tokio_postgres::Client) -> Fut,
+            E: From<tokio_postgres::Error>
+            Fut: Future<Item=(R, tokio_postgres::Client), Error=(tokio_postgres::Error, tokio_postgres::Client)>,
+    {
+        connection.simple_query("BEGIN")
+            .for_each(|_| Ok(()))
+            .then(|r| match r {
+                Ok(_) => Ok(connection),
+                Err(e) => {
+                    let error: E = e.into();
+                    Err((error, connection))
+                },
+            })
+            .and_then(|connection| f(connection))
+            .and_then(|(result, mut connection)| {
+                connection.simple_query("COMMIT")
+                    .for_each(|_| Ok(()))
+                    .then(|r| match r {
+                        Ok(_) => Ok((result, connection)),
+                        Err(e) => Err((e.into(), connection))
+                    })
+            })
+            .or_else(|(e, mut connection)| {
+                connection.simple_query("ROLLBACK").for_each(|_| Ok(()))
+                    .then(|_| Err((e.into(), connection)))
+            })
+    }
 }
 
 impl<Tls> fmt::Debug for PostgresConnectionManager<Tls>
@@ -87,31 +118,4 @@ where
             .field("params", &self.params)
             .finish()
     }
-}
-
-/// Run asynchronous into a Transaction
-pub fn transaction<R, Fut, F>(mut connection: tokio_postgres::Client, f: F) -> impl Future<Item=(R, tokio_postgres::Client), Error=(tokio_postgres::Error, tokio_postgres::Client)>
-    where
-        F: FnOnce(tokio_postgres::Client) -> Fut,
-        Fut: Future<Item=(R, tokio_postgres::Client), Error=(tokio_postgres::Error, tokio_postgres::Client)>,
-{
-    connection.simple_query("BEGIN")
-        .for_each(|_| Ok(()))
-        .then(|r| match r {
-            Ok(_) => Ok(connection),
-            Err(e) => Err((e, connection)),
-        })
-        .and_then(|connection| f(connection))
-        .and_then(|(result, mut connection)| {
-            connection.simple_query("COMMIT")
-                .for_each(|_| Ok(()))
-                .then(|r| match r {
-                    Ok(_) => Ok((result, connection)),
-                    Err(e) => Err((e, connection))
-                })
-        })
-        .or_else(|(e, mut connection)| {
-            connection.simple_query("ROLLBACK").for_each(|_| Ok(()))
-                .then(|_| Err((e, connection)))
-        })
 }
