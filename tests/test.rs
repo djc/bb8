@@ -1,7 +1,3 @@
-extern crate bb8;
-extern crate futures;
-extern crate tokio;
-
 use bb8::*;
 
 use std::iter::FromIterator;

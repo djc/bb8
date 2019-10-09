@@ -5,6 +5,7 @@ authors = ["Kyle Huey <khuey@kylehuey.com>"]
 description = "r2d2, but for async tokio based connections"
 license = "MIT"
 repository = "https://github.com/khuey/bb8"
+edition = "2018"
 
 [dependencies]
 futures = "0.1"

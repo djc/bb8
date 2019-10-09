@@ -1,10 +1,6 @@
-extern crate bb8;
-extern crate bb8_postgres;
-extern crate futures;
-extern crate futures_state_stream;
-extern crate hyper;
-extern crate tokio;
-extern crate tokio_postgres;
+use hyper;
+
+use tokio_postgres;
 
 use std::sync::{Arc, Mutex};
 
