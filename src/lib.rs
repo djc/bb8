@@ -533,7 +533,7 @@ where
                             Err((_, conn)) => {
                                 {
                                     let mut locked = pool.internals.lock().unwrap();
-                                    drop_connections(&pool, &mut locked, vec![conn]);
+                                    let _ = drop_connections(&pool, &mut locked, vec![conn]);
                                 }
                                 Ok(Loop::Continue(pool))
                             }
@@ -798,7 +798,7 @@ impl<M: ManageConnection> Pool<M> {
 
                     let mut locked = inner.internals.lock().unwrap();
                     if broken {
-                        drop_connections(&inner, locked, vec![conn]);
+                        let _ = drop_connections(&inner, locked, vec![conn]);
                     } else {
                         let conn = IdleConn::make_idle(Conn {
                             conn: conn,
