@@ -1,10 +1,8 @@
 //! Postgres support for the `bb8` connection pool.
 #![deny(missing_docs, missing_debug_implementations)]
 
-pub extern crate bb8;
-pub extern crate tokio_postgres;
-
-extern crate futures;
+pub use bb8;
+pub use tokio_postgres;
 
 use futures::prelude::*;
 use tokio_postgres::config::Config;

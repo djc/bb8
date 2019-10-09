@@ -5,6 +5,7 @@ authors = ["Kyle Huey <khuey@kylehuey.com>"]
 description = "r2d2-postgres, but for async tokio based connections"
 license = "MIT"
 repository = "https://github.com/khuey/bb8"
+edition = "2018"
 
 [features]
 "with-bit-vec-0_5" = ["tokio-postgres/with-bit-vec-0_5"]

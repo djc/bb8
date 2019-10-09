@@ -11,10 +11,6 @@
 //! check the health of connections.
 #![deny(missing_docs, missing_debug_implementations)]
 
-extern crate futures;
-extern crate tokio_executor;
-extern crate tokio_timer;
-
 use std::borrow::BorrowMut;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
@@ -34,7 +30,7 @@ use tokio_executor::spawn;
 use tokio_timer::{Interval, Timeout};
 
 mod util;
-use util::*;
+use crate::util::*;
 
 /// A trait which provides connection-specific functionality.
 pub trait ManageConnection: Send + Sync + 'static {
