@@ -35,7 +35,7 @@ fn main() {
             let pool = locked
                 .as_ref()
                 .expect("bb8 should have been started before hyper");
-            let f: Box<Future<Item = Response<Body>, Error = hyper::Error> + Send> = Box::new(
+            let f: Box<dyn Future<Item = Response<Body>, Error = hyper::Error> + Send> = Box::new(
                 pool.run(move |mut connection| {
                     connection.prepare("SELECT 1").then(move |r| match r {
                         Ok(select) => {
