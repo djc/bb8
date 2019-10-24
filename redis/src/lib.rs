@@ -15,7 +15,7 @@ type Result<T> = std::result::Result<T, RedisError>;
 
 /// `RedisPool` is a convenience wrapper around `bb8::Pool` that hides the fact that
 /// `RedisConnectionManager` uses an `Option<Connection>` to smooth over the API incompatibility.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RedisPool {
     pool: bb8::Pool<RedisConnectionManager>,
 }
