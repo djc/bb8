@@ -8,7 +8,7 @@ repository = "https://github.com/khuey/bb8"
 edition = "2018"
 
 [features]
-"with-bit-vec-0_5" = ["tokio-postgres/with-bit-vec-0_5"]
+"with-bit-vec-0_6" = ["tokio-postgres/with-bit-vec-0_6"]
 "with-chrono-0_4" = ["tokio-postgres/with-chrono-0_4"]
 "with-eui48-0_4" = ["tokio-postgres/with-eui48-0_4"]
 "with-geo-types-0_4" = ["tokio-postgres/with-geo-types-0_4"]
@@ -16,11 +16,11 @@ edition = "2018"
 "with-uuid-0_7" = ["tokio-postgres/with-uuid-0_7"]
 
 [dependencies]
+async-trait = "0.1"
 bb8 = { path = "../" }
-futures = "0.1"
-tokio = "0.1"
-tokio-postgres = "0.4.0-rc.3"
+futures = { version = "0.3.0-alpha.19", package = "futures-preview" }
+tokio = "0.2.0-alpha.6"
+tokio-postgres = "0.5.0-alpha.1"
 
 [dev-dependencies]
-futures-state-stream = "0.2"
-hyper = "0.12"
+hyper = { version = "0.13.0-alpha.4", features = ["unstable-stream"] }

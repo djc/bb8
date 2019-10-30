@@ -4,6 +4,7 @@
 pub use bb8;
 pub use tokio_postgres;
 
+use async_trait::async_trait;
 use futures::prelude::*;
 use tokio_postgres::config::Config;
 use tokio_postgres::tls::{MakeTlsConnect, TlsConnect};
@@ -48,6 +49,7 @@ where
     }
 }
 
+#[async_trait]
 impl<Tls> bb8::ManageConnection for PostgresConnectionManager<Tls>
 where
     Tls: MakeTlsConnect<Socket> + Clone + Send + Sync + 'static,
@@ -58,32 +60,27 @@ where
     type Connection = Client;
     type Error = Error;
 
-    fn connect(
-        &self,
-    ) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send + 'static> {
-        Box::new(
-            self.config
-                .connect(self.tls.clone())
-                .map(|(client, connection)| {
-                    // The connection object performs the actual communication with the database,
-                    // so spawn it off to run on its own.
-                    tokio::spawn(connection.map_err(|_| panic!()));
+    async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+        self.config
+            .connect(self.tls.clone())
+            .await
+            .map(|(client, connection)| {
+                // The connection object performs the actual communication with the database,
+                // so spawn it off to run on its own.
+                tokio::spawn(connection.map(|_| ()));
 
-                    client
-                }),
-        )
+                client
+            })
     }
 
-    fn is_valid(
+    async fn is_valid(
         &self,
-        mut conn: Self::Connection,
-    ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
-    {
-        let f = conn.simple_query("").collect();
-        Box::new(f.then(move |r| match r {
+        conn: Self::Connection,
+    ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+        match conn.simple_query("").await {
             Ok(_) => Ok(conn),
             Err(e) => Err((e, conn)),
-        }))
+        }
     }
 
     fn has_broken(&self, conn: &mut Self::Connection) -> bool {
