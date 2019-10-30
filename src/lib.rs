@@ -22,7 +22,7 @@ use std::mem;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant};
 
-use futures::future::{lazy, loop_fn, ok, Either, Loop};
+use futures::future::{lazy, ok, Either};
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use futures::sync::oneshot;
@@ -503,45 +503,69 @@ where
     M::Connection: Send,
     M::Error: Send,
 {
-    loop_fn(inner, |inner| {
-        let pool = inner.clone();
-        let mut internals = inner.internals.lock().unwrap();
-        if let Some(conn) = internals.conns.pop_front() {
-            // Spin up a new connection if necessary to retain our minimum idle count
-            if internals.num_conns + internals.pending_conns < pool.statics.max_size {
-                let f = Pool::replenish_idle_connections_locked(&pool, &mut internals);
-                pool.spawn(pool.sink_error(f));
+    IdleConnectionFuture {
+        inner,
+        validation: None,
+    }
+}
+
+struct IdleConnectionFuture<M>
+where
+    M: ManageConnection + Send,
+{
+    inner: Arc<SharedPool<M>>,
+    validation: Option<(
+        Box<dyn Future<Item = M::Connection, Error = (M::Error, M::Connection)> + Send>,
+        Instant,
+    )>,
+}
+
+impl<M> Future for IdleConnectionFuture<M>
+where
+    M: ManageConnection,
+    M::Connection: Send,
+    M::Error: Send,
+{
+    type Item = Conn<M::Connection>;
+    type Error = Arc<SharedPool<M>>;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        loop {
+            if let Some((ref mut validation, birth)) = self.validation {
+                match validation.poll() {
+                    Ok(Async::Ready(conn)) => return Ok(Async::Ready(Conn { conn, birth })),
+                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+                    Err((_, conn)) => {
+                        let mut locked = self.inner.internals.lock().unwrap();
+                        let _ = drop_connections(&self.inner, &mut locked, vec![conn]);
+                        self.validation = None;
+                    }
+                };
             }
 
-            // Go ahead and release the lock here.
-            mem::drop(internals);
+            let mut internals = self.inner.internals.lock().unwrap();
+            if let Some(conn) = internals.conns.pop_front() {
+                // Spin up a new connection if necessary to retain our minimum idle count
+                if internals.num_conns + internals.pending_conns < self.inner.statics.max_size {
+                    let f = Pool::replenish_idle_connections_locked(&self.inner, &mut internals);
+                    self.inner.spawn(self.inner.sink_error(f));
+                }
 
-            if pool.statics.test_on_check_out {
-                let birth = conn.conn.birth;
-                Either::A(
-                    pool.manager
-                        .is_valid(conn.conn.conn)
-                        .then(move |r| match r {
-                            Ok(conn) => Ok(Loop::Break(Conn {
-                                conn: conn,
-                                birth: birth,
-                            })),
-                            Err((_, conn)) => {
-                                {
-                                    let mut locked = pool.internals.lock().unwrap();
-                                    let _ = drop_connections(&pool, &mut locked, vec![conn]);
-                                }
-                                Ok(Loop::Continue(pool))
-                            }
-                        }),
-                )
+                // Go ahead and release the lock here.
+                mem::drop(internals);
+
+                if self.inner.statics.test_on_check_out {
+                    self.validation =
+                        Some((self.inner.manager.is_valid(conn.conn.conn), conn.conn.birth));
+                    continue;
+                } else {
+                    return Ok(Async::Ready(conn.conn));
+                }
             } else {
-                Either::B(Ok(Loop::Break(conn.conn)).into_future())
+                return Err(self.inner.clone());
             }
-        } else {
-            Either::B(Err(pool).into_future())
         }
-    })
+    }
 }
 
 // Drop connections
