@@ -37,7 +37,7 @@ pub trait ManageConnection: Send + Sync + 'static {
     /// The connection type this manager deals with.
     type Connection: Send + 'static;
     /// The error type returned by `Connection`s.
-    type Error: Send + 'static;
+    type Error: fmt::Debug + Send + 'static;
 
     /// Attempts to create a new connection.
     fn connect(&self) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send>;
