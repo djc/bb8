@@ -2,16 +2,18 @@ use bb8::*;
 
 use std::iter::FromIterator;
 use std::marker::PhantomData;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::task::Poll;
 use std::time::Duration;
 use std::{error, fmt, mem};
 
-use futures::future::{empty, err, join_all, lazy, ok};
+use async_trait::async_trait;
+use futures::channel::oneshot;
+use futures::future::{err, lazy, ok, pending, ready, try_join_all};
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
-use futures::sync::oneshot;
-use futures::Async;
 use tokio::runtime::current_thread::Runtime;
 use tokio::timer::Timeout;
 
@@ -43,6 +45,7 @@ impl<C> OkManager<C> {
     }
 }
 
+#[async_trait]
 impl<C> ManageConnection for OkManager<C>
 where
     C: Default + Send + Sync + 'static,
@@ -50,16 +53,15 @@ where
     type Connection = C;
     type Error = Error;
 
-    fn connect(&self) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send> {
-        Box::new(ok(Default::default()))
+    async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+        Ok(Default::default())
     }
 
-    fn is_valid(
+    async fn is_valid(
         &self,
         conn: Self::Connection,
-    ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
-    {
-        Box::new(ok(conn))
+    ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+        Ok(conn)
     }
 
     fn has_broken(&self, _: &mut Self::Connection) -> bool {
@@ -81,6 +83,7 @@ impl<C> NthConnectionFailManager<C> {
     }
 }
 
+#[async_trait]
 impl<C> ManageConnection for NthConnectionFailManager<C>
 where
     C: Default + Send + Sync + 'static,
@@ -88,22 +91,21 @@ where
     type Connection = C;
     type Error = Error;
 
-    fn connect(&self) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send> {
+    async fn connect(&self) -> Result<Self::Connection, Self::Error> {
         let mut n = self.n.lock().unwrap();
         if *n > 0 {
             *n -= 1;
-            Box::new(ok(Default::default()))
+            Ok(Default::default())
         } else {
-            Box::new(err(Error))
+            Err(Error)
         }
     }
 
-    fn is_valid(
+    async fn is_valid(
         &self,
         conn: Self::Connection,
-    ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
-    {
-        Box::new(ok(conn))
+    ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+        Ok(conn)
     }
 
     fn has_broken(&self, _: &mut Self::Connection) -> bool {
@@ -116,66 +118,78 @@ fn test_max_size_ok() {
     let mut event_loop = Runtime::new().unwrap();
     let manager = NthConnectionFailManager::<FakeConnection>::new(5);
     let pool = event_loop
-        .block_on(lazy(|| Pool::builder().max_size(5).build(manager)))
+        .block_on(async { Pool::builder().max_size(5).build(manager).await })
         .unwrap();
     let mut channels = Vec::with_capacity(5);
     let mut ignored = Vec::with_capacity(5);
     for _ in 0..5 {
         let (tx1, rx1) = oneshot::channel();
-        let (tx2, rx2) = oneshot::channel();
-        event_loop.spawn(
+        let (tx2, rx2) = oneshot::channel::<()>();
+        let pool = pool.clone();
+        event_loop.spawn(async move {
             pool.run(move |conn| {
                 tx1.send(()).unwrap();
-                rx2.then(|r| match r {
+                rx2.map(|r| match r {
                     Ok(v) => Ok((v, conn)),
                     Err(_) => Err((Error, conn)),
                 })
             })
-            .map_err(|_| ()),
-        );
+            .map(|_| ())
+            .await
+        });
         channels.push(rx1);
         ignored.push(tx2);
     }
     assert_eq!(channels.len(), 5);
-    assert_eq!(event_loop.block_on(join_all(channels)).unwrap().len(), 5);
+    assert_eq!(
+        event_loop.block_on(try_join_all(channels)).unwrap().len(),
+        5
+    );
 }
 
 #[test]
 fn test_acquire_release() {
     let mut event_loop = Runtime::new().unwrap();
     let pool = event_loop
-        .block_on(lazy(|| {
+        .block_on(async {
             Pool::builder()
                 .max_size(2)
                 .build(OkManager::<FakeConnection>::new())
-        }))
+                .await
+        })
         .unwrap();
 
     let (tx1, rx1) = oneshot::channel();
     let (tx2, rx2) = oneshot::channel();
-    event_loop.spawn(
-        pool.run(move |conn| {
-            tx1.send(()).unwrap();
-            rx2.then(|r| match r {
-                Ok(v) => Ok((v, conn)),
-                Err(_) => Err((Error, conn)),
+    let clone = pool.clone();
+    event_loop.spawn(async move {
+        clone
+            .run(move |conn| {
+                tx1.send(()).unwrap();
+                rx2.then(|r| match r {
+                    Ok(v) => ok((v, conn)),
+                    Err(_) => err((Error, conn)),
+                })
             })
-        })
-        .map_err(|_| ()),
-    );
+            .map(|_| ())
+            .await
+    });
 
     let (tx3, rx3) = oneshot::channel();
     let (tx4, rx4) = oneshot::channel();
-    event_loop.spawn(
-        pool.run(move |conn| {
-            tx3.send(()).unwrap();
-            rx4.then(|r| match r {
-                Ok(v) => Ok((v, conn)),
-                Err(_) => Err((Error, conn)),
+    let clone = pool.clone();
+    event_loop.spawn(async move {
+        clone
+            .run(move |conn| {
+                tx3.send(()).unwrap();
+                rx4.then(|r| match r {
+                    Ok(v) => ok((v, conn)),
+                    Err(_) => err((Error, conn)),
+                })
             })
-        })
-        .map_err(|_| ()),
-    );
+            .map(|_| ())
+            .await
+    });
 
     // Get the first connection.
     event_loop.block_on(rx1).unwrap();
@@ -184,24 +198,27 @@ fn test_acquire_release() {
 
     let (tx5, mut rx5) = oneshot::channel();
     let (tx6, rx6) = oneshot::channel();
-    event_loop.spawn(
-        pool.run(move |conn| {
-            tx5.send(()).unwrap();
-            rx6.then(|r| match r {
-                Ok(v) => Ok((v, conn)),
-                Err(_) => Err((Error, conn)),
+    let clone = pool.clone();
+    event_loop.spawn(async move {
+        clone
+            .run(move |conn| {
+                tx5.send(()).unwrap();
+                rx6.then(|r| match r {
+                    Ok(v) => ok((v, conn)),
+                    Err(_) => err((Error, conn)),
+                })
             })
-        })
-        .map_err(|_| ()),
-    );
+            .map(|_| ())
+            .await
+    });
 
     {
         let rx5_ref = &mut rx5;
         // NB: The channel needs to run on a Task, so shove it onto
         // the tokio event loop with a lazy.
         assert_eq!(
-            event_loop.block_on(lazy(move || rx5_ref.poll())),
-            Ok(Async::NotReady)
+            event_loop.block_on(lazy(|cx| Pin::new(rx5_ref).poll(cx))),
+            Poll::Pending
         );
     }
 
@@ -211,9 +228,6 @@ fn test_acquire_release() {
     event_loop.block_on(rx5).unwrap();
     tx4.send(()).unwrap();
     tx6.send(()).unwrap();
-
-    let r: Result<(), ()> = Ok(());
-    event_loop.block_on(r.into_future()).unwrap();
 }
 
 #[test]
@@ -237,20 +251,20 @@ fn test_drop_on_broken() {
 
     struct Handler;
 
+    #[async_trait]
     impl ManageConnection for Handler {
         type Connection = Connection;
         type Error = Error;
 
-        fn connect(&self) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send> {
-            Box::new(ok(Default::default()))
+        async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+            Ok(Default::default())
         }
 
-        fn is_valid(
+        async fn is_valid(
             &self,
             conn: Self::Connection,
-        ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
-        {
-            Box::new(ok(conn))
+        ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+            Ok(conn)
         }
 
         fn has_broken(&self, _: &mut Self::Connection) -> bool {
@@ -260,17 +274,14 @@ fn test_drop_on_broken() {
 
     let mut event_loop = Runtime::new().unwrap();
     let pool = event_loop
-        .block_on(lazy(|| Pool::builder().build(Handler)))
+        .block_on(async { Pool::builder().build(Handler).await })
         .unwrap();
 
     event_loop
-        .block_on(
-            pool.run(move |conn| {
-                let r: Result<_, (Error, _)> = Ok(((), conn));
-                r.into_future()
-            })
-            .map_err(|_| ()),
-        )
+        .block_on(pool.run(move |conn| {
+            let r: Result<_, (Error, _)> = Ok(((), conn));
+            ready(r)
+        }))
         .unwrap();
 
     assert!(DROPPED.load(Ordering::SeqCst));
@@ -280,13 +291,13 @@ fn test_drop_on_broken() {
 fn test_initialization_failure() {
     let mut event_loop = Runtime::new().unwrap();
     let manager = NthConnectionFailManager::<FakeConnection>::new(0);
-    let e = event_loop.block_on(lazy(|| {
+    let e = event_loop.block_on(async {
         Pool::builder()
             .max_size(1)
             .min_idle(Some(1))
             .build(manager)
-            .map(|_| ())
-    }));
+            .await
+    });
     assert!(e.is_err());
     assert_eq!(e.unwrap_err(), Error);
 }
@@ -295,19 +306,15 @@ fn test_initialization_failure() {
 fn test_lazy_initialization_failure() {
     let mut event_loop = Runtime::new().unwrap();
     let manager = NthConnectionFailManager::<FakeConnection>::new(0);
-    let pool = event_loop
-        .block_on(lazy(|| {
-            ok::<_, ()>(
-                Pool::builder()
-                    .connection_timeout(Duration::from_secs(1))
-                    .build_unchecked(manager),
-            )
-        }))
-        .unwrap();
+    let pool = event_loop.block_on(async {
+        Pool::builder()
+            .connection_timeout(Duration::from_secs(1))
+            .build_unchecked(manager)
+    });
 
     let e = event_loop.block_on(pool.run(move |conn| {
         let r: Result<_, (Error, _)> = Ok(((), conn));
-        r.into_future()
+        ready(r)
     }));
     assert!(e.is_err());
     assert_eq!(e.unwrap_err(), bb8::RunError::TimedOut);
@@ -317,26 +324,30 @@ fn test_lazy_initialization_failure() {
 fn test_get_timeout() {
     let mut event_loop = Runtime::new().unwrap();
     let pool = event_loop
-        .block_on(lazy(|| {
+        .block_on(async {
             Pool::builder()
                 .max_size(1)
                 .connection_timeout(Duration::from_millis(100))
                 .build(OkManager::<FakeConnection>::new())
-        }))
+                .await
+        })
         .unwrap();
 
     let (tx1, rx1) = oneshot::channel();
     let (tx2, rx2) = oneshot::channel();
-    event_loop.spawn(
-        pool.run(move |conn| {
-            tx1.send(()).unwrap();
-            rx2.then(|r| match r {
-                Ok(v) => Ok((v, conn)),
-                Err(_) => Err((Error, conn)),
+    let clone = pool.clone();
+    event_loop.spawn(async move {
+        clone
+            .run(move |conn| {
+                tx1.send(()).unwrap();
+                rx2.map(|r| match r {
+                    Ok(v) => Ok((v, conn)),
+                    Err(_) => Err((Error, conn)),
+                })
             })
-        })
-        .map_err(|_| ()),
-    );
+            .map(|_| ())
+            .await
+    });
 
     // Get the first connection.
     assert!(event_loop.block_on(rx1).is_ok());
@@ -344,7 +355,7 @@ fn test_get_timeout() {
     let e = event_loop.block_on(
         pool.run(move |conn| {
             let r: Result<_, (Error, _)> = Ok(((), conn));
-            r.into_future()
+            ready(r)
         })
         .map_err(|_| ()),
     );
@@ -352,7 +363,7 @@ fn test_get_timeout() {
 
     tx2.send(()).unwrap();
     let r: Result<(), ()> = Ok(());
-    event_loop.block_on(r.into_future()).unwrap();
+    event_loop.block_on(ready(r)).unwrap();
 }
 
 #[test]
@@ -361,33 +372,31 @@ fn test_now_invalid() {
 
     struct Handler;
 
+    #[async_trait]
     impl ManageConnection for Handler {
         type Connection = FakeConnection;
         type Error = Error;
 
-        fn connect(&self) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send> {
-            let r = if INVALID.load(Ordering::SeqCst) {
+        async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+            if INVALID.load(Ordering::SeqCst) {
                 Err(Error)
             } else {
                 Ok(FakeConnection)
-            };
-            Box::new(r.into_future())
+            }
         }
 
-        fn is_valid(
+        async fn is_valid(
             &self,
             conn: Self::Connection,
-        ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
-        {
+        ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
             println!("Called is_valid");
-            let r = if INVALID.load(Ordering::SeqCst) {
+            if INVALID.load(Ordering::SeqCst) {
                 println!("Not");
                 Err((Error, conn))
             } else {
                 println!("Is");
                 Ok(conn)
-            };
-            Box::new(r.into_future())
+            }
         }
 
         fn has_broken(&self, _: &mut Self::Connection) -> bool {
@@ -397,40 +406,47 @@ fn test_now_invalid() {
 
     let mut event_loop = Runtime::new().unwrap();
     let pool = event_loop
-        .block_on(lazy(|| {
+        .block_on(async {
             Pool::builder()
                 .max_size(2)
                 .min_idle(Some(2))
                 .connection_timeout(Duration::from_secs(1))
                 .build(Handler)
-        }))
+                .await
+        })
         .unwrap();
 
     let (tx1, rx1) = oneshot::channel();
     let (tx2, rx2) = oneshot::channel();
-    event_loop.spawn(
-        pool.run(move |conn| {
-            tx1.send(()).unwrap();
-            rx2.then(|r| match r {
-                Ok(v) => Ok((v, conn)),
-                Err(_) => Err((Error, conn)),
+    let clone = pool.clone();
+    event_loop.spawn(async move {
+        clone
+            .run(move |conn| {
+                tx1.send(()).unwrap();
+                rx2.map(|r| match r {
+                    Ok(v) => Ok((v, conn)),
+                    Err(_) => Err((Error, conn)),
+                })
             })
-        })
-        .map_err(|_| ()),
-    );
+            .map(|_| ())
+            .await
+    });
 
     let (tx3, rx3) = oneshot::channel();
     let (tx4, rx4) = oneshot::channel();
-    event_loop.spawn(
-        pool.run(move |conn| {
-            tx3.send(()).unwrap();
-            rx4.then(|r| match r {
-                Ok(v) => Ok((v, conn)),
-                Err(_) => Err((Error, conn)),
+    let clone = pool.clone();
+    event_loop.spawn(async move {
+        clone
+            .run(move |conn| {
+                tx3.send(()).unwrap();
+                rx4.map(|r| match r {
+                    Ok(v) => Ok((v, conn)),
+                    Err(_) => Err((Error, conn)),
+                })
             })
-        })
-        .map_err(|_| ()),
-    );
+            .map(|_| ())
+            .await
+    });
 
     // Get the first connection.
     event_loop.block_on(rx1).unwrap();
@@ -444,18 +460,14 @@ fn test_now_invalid() {
 
     // Go idle for a bit
     assert!(event_loop
-        .block_on(lazy(|| Timeout::new(
-            empty::<(), ()>(),
-            Duration::from_secs(3)
-        )))
-        .unwrap_err()
-        .is_elapsed());
+        .block_on(Timeout::new(pending::<()>(), Duration::from_secs(3)))
+        .is_err());
 
     // Now try to get a new connection.
     let r = event_loop.block_on(
         pool.run(move |conn| {
             let r: Result<_, (Error, _)> = Ok(((), conn));
-            r
+            ready(r)
         })
         .map_err(|_| ()),
     );
@@ -478,7 +490,7 @@ fn test_max_lifetime() {
     let mut event_loop = Runtime::new().unwrap();
     let manager = NthConnectionFailManager::<Connection>::new(5);
     let pool = event_loop
-        .block_on(lazy(|| {
+        .block_on(async {
             Pool::builder()
                 .max_lifetime(Some(Duration::from_secs(1)))
                 .connection_timeout(Duration::from_secs(1))
@@ -486,45 +498,41 @@ fn test_max_lifetime() {
                 .max_size(5)
                 .min_idle(Some(5))
                 .build(manager)
-        }))
+                .await
+        })
         .unwrap();
 
     let (tx1, rx1) = oneshot::channel();
     let (tx2, rx2) = oneshot::channel();
-    event_loop.spawn(
-        pool.run(move |conn| {
-            tx1.send(()).unwrap();
-            // NB: If we sleep here we'll block this thread's event loop, and the
-            // reaper can't run.
-            rx2.then(|r| match r {
-                Ok(v) => Ok((v, conn)),
-                Err(_) => Err((Error, conn)),
+    let clone = pool.clone();
+    event_loop.spawn(async move {
+        clone
+            .run(move |conn| {
+                tx1.send(()).unwrap();
+                // NB: If we sleep here we'll block this thread's event loop, and the
+                // reaper can't run.
+                rx2.map(|r| match r {
+                    Ok(v) => Ok((v, conn)),
+                    Err(_) => Err((Error, conn)),
+                })
             })
-        })
-        .map_err(|_| ()),
-    );
+            .map(|_| ())
+            .await
+    });
 
     event_loop.block_on(rx1).unwrap();
 
     // And wait.
     assert!(event_loop
-        .block_on(lazy(|| Timeout::new(
-            empty::<(), ()>(),
-            Duration::from_secs(2)
-        )))
-        .unwrap_err()
-        .is_elapsed());
+        .block_on(Timeout::new(pending::<()>(), Duration::from_secs(2)))
+        .is_err());
     assert_eq!(DROPPED.load(Ordering::SeqCst), 4);
     tx2.send(()).unwrap();
 
     // And wait some more.
     assert!(event_loop
-        .block_on(lazy(|| Timeout::new(
-            empty::<(), ()>(),
-            Duration::from_secs(2)
-        )))
-        .unwrap_err()
-        .is_elapsed());
+        .block_on(Timeout::new(pending::<()>(), Duration::from_secs(2)))
+        .is_err());
     assert_eq!(DROPPED.load(Ordering::SeqCst), 5);
 }
 
@@ -532,12 +540,13 @@ fn test_max_lifetime() {
 fn test_min_idle() {
     let mut event_loop = Runtime::new().unwrap();
     let pool = event_loop
-        .block_on(lazy(|| {
+        .block_on(async {
             Pool::builder()
                 .max_size(5)
                 .min_idle(Some(2))
                 .build(OkManager::<FakeConnection>::new())
-        }))
+                .await
+        })
         .unwrap();
 
     let state = pool.state();
@@ -549,22 +558,25 @@ fn test_min_idle() {
     for _ in 0..3 {
         let (tx1, rx1) = oneshot::channel();
         let (tx2, rx2) = oneshot::channel();
-        event_loop.spawn(
-            pool.run(|conn| {
-                tx1.send(()).unwrap();
-                rx2.then(|r| match r {
-                    Ok(v) => Ok((v, conn)),
-                    Err(_) => Err((Error, conn)),
+        let clone = pool.clone();
+        event_loop.spawn(async move {
+            clone
+                .run(|conn| {
+                    tx1.send(()).unwrap();
+                    rx2.map(|r| match r {
+                        Ok(v) => Ok((v, conn)),
+                        Err(_) => Err((Error, conn)),
+                    })
                 })
-            })
-            .map_err(|_| ()),
-        );
+                .map(|_| ())
+                .await
+        });
         rx.push(rx1);
         tx.push(tx2);
     }
 
     event_loop
-        .block_on(FuturesUnordered::from_iter(rx).collect())
+        .block_on(FuturesUnordered::from_iter(rx).try_collect::<Vec<_>>())
         .unwrap();
     let state = pool.state();
     assert_eq!(2, state.idle_connections);
@@ -576,12 +588,8 @@ fn test_min_idle() {
 
     // And wait for the connections to return.
     assert!(event_loop
-        .block_on(lazy(|| Timeout::new(
-            empty::<(), ()>(),
-            Duration::from_secs(1)
-        )))
-        .unwrap_err()
-        .is_elapsed());
+        .block_on(Timeout::new(pending::<()>(), Duration::from_secs(1)))
+        .is_err());
 
     let state = pool.state();
     assert_eq!(5, state.idle_connections);
@@ -602,20 +610,20 @@ fn test_conns_drop_on_pool_drop() {
 
     struct Handler;
 
+    #[async_trait]
     impl ManageConnection for Handler {
         type Connection = Connection;
         type Error = Error;
 
-        fn connect(&self) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send> {
-            Box::new(ok(Connection))
+        async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+            Ok(Connection)
         }
 
-        fn is_valid(
+        async fn is_valid(
             &self,
             conn: Self::Connection,
-        ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
-        {
-            Box::new(ok(conn))
+        ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+            Ok(conn)
         }
 
         fn has_broken(&self, _: &mut Self::Connection) -> bool {
@@ -625,13 +633,14 @@ fn test_conns_drop_on_pool_drop() {
 
     let mut event_loop = Runtime::new().unwrap();
     let pool = event_loop
-        .block_on(lazy(|| {
+        .block_on(async {
             Pool::builder()
                 .max_lifetime(Some(Duration::from_secs(10)))
                 .max_size(10)
                 .min_idle(Some(10))
                 .build(Handler)
-        }))
+                .await
+        })
         .unwrap();
 
     mem::drop(pool);
@@ -642,12 +651,8 @@ fn test_conns_drop_on_pool_drop() {
         }
 
         assert!(event_loop
-            .block_on(lazy(|| Timeout::new(
-                empty::<(), ()>(),
-                Duration::from_secs(1)
-            )))
-            .unwrap_err()
-            .is_elapsed());
+            .block_on(Timeout::new(pending::<()>(), Duration::from_secs(1)))
+            .is_err());
     }
 
     panic!(
