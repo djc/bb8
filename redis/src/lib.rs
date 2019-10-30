@@ -4,14 +4,11 @@
 pub use bb8;
 pub use redis;
 
-use futures::{Future, IntoFuture};
+use futures::future::{Future, FutureExt};
 
+use async_trait::async_trait;
 use redis::aio::Connection;
 use redis::{Client, RedisError};
-
-use std::option::Option;
-
-type Result<T> = std::result::Result<T, RedisError>;
 
 /// `RedisPool` is a convenience wrapper around `bb8::Pool` that hides the fact that
 /// `RedisConnectionManager` uses an `Option<Connection>` to smooth over the API incompatibility.
@@ -28,25 +25,24 @@ impl RedisPool {
     }
 
     /// Run the function with a connection provided by the pool.
-    pub fn run<'a, T, E, U, F>(
+    pub async fn run<'a, T, E, U, F>(
         &self,
         f: F,
-    ) -> impl Future<Item = T, Error = bb8::RunError<E>> + Send + 'a
+    ) -> Result<T, bb8::RunError<E>>
     where
         F: FnOnce(Connection) -> U + Send + 'a,
-        U: IntoFuture<Item = (Connection, T), Error = E> + 'a,
-        U::Future: Send,
+        U: Future<Output = Result<(Connection, T), E>> + Send + 'a,
         E: From<<RedisConnectionManager as bb8::ManageConnection>::Error> + Send + 'a,
         T: Send + 'a,
     {
         let f = move |conn: Option<Connection>| {
             let conn = conn.unwrap();
-            f(conn)
-                .into_future()
-                .map(|(conn, item)| (item, Some(conn)))
-                .map_err(|err| (err, None))
+            f(conn).map(|res| match res {
+                Ok((conn, item)) => Ok((item, Some(conn))),
+                Err(err) => Err((err, None)),
+            })
         };
-        self.pool.run(f)
+        self.pool.run(f).await
     }
 }
 
@@ -58,33 +54,32 @@ pub struct RedisConnectionManager {
 
 impl RedisConnectionManager {
     /// Create a new `RedisConnectionManager`.
-    pub fn new(client: Client) -> Result<RedisConnectionManager> {
+    pub fn new(client: Client) -> Result<RedisConnectionManager, RedisError> {
         Ok(RedisConnectionManager { client })
     }
 }
 
+#[async_trait]
 impl bb8::ManageConnection for RedisConnectionManager {
     type Connection = Option<Connection>;
     type Error = RedisError;
 
-    fn connect(
-        &self,
-    ) -> Box<dyn Future<Item = Self::Connection, Error = Self::Error> + Send + 'static> {
-        Box::new(self.client.get_async_connection().map(|conn| Some(conn)))
+    async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+        match self.client.get_async_connection().await {
+            Ok(conn) => Ok(Some(conn)),
+            Err(e) => Err(e),
+        }
     }
 
-    fn is_valid(
+    async fn is_valid(
         &self,
-        conn: Self::Connection,
-    ) -> Box<dyn Future<Item = Self::Connection, Error = (Self::Error, Self::Connection)> + Send>
-    {
+        mut conn: Self::Connection,
+    ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
         // The connection should only be None after a failure.
-        Box::new(
-            redis::cmd("PING")
-                .query_async(conn.unwrap())
-                .map_err(|err| (err, None))
-                .map(|(conn, ())| Some(conn)),
-        )
+        match redis::cmd("PING").query_async(conn.as_mut().unwrap()).await {
+            Ok(()) => Ok(conn),
+            Err(e) => Err((e, None)),
+        }
     }
 
     fn has_broken(&self, conn: &mut Self::Connection) -> bool {
