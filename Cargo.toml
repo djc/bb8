@@ -8,12 +8,13 @@ repository = "https://github.com/khuey/bb8"
 edition = "2018"
 
 [dependencies]
-futures = "0.1"
-tokio-executor = "0.1"
-tokio-timer = "0.2"
+async-trait = "0.1"
+futures = { version = "0.3.0-alpha.19", package = "futures-preview" }
+tokio-executor = "0.2.0-alpha.6"
+tokio-timer = "0.3.0-alpha.6"
 
 [dev-dependencies]
-tokio = "0.1"
+tokio = "0.2.0-alpha.6"
 
 [workspace]
 members = [
