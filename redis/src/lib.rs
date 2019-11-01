@@ -17,7 +17,8 @@ type Result<T> = std::result::Result<T, RedisError>;
 /// `RedisConnectionManager` uses an `Option<Connection>` to smooth over the API incompatibility.
 #[derive(Debug)]
 pub struct RedisPool {
-    pool: bb8::Pool<RedisConnectionManager>,
+    /// Wrapped `bb8::Pool`
+    pub pool: bb8::Pool<RedisConnectionManager>,
 }
 
 impl RedisPool {
