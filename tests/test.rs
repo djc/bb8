@@ -660,3 +660,53 @@ fn test_conns_drop_on_pool_drop() {
         DROPPED.load(Ordering::SeqCst)
     );
 }
+
+#[test]
+fn test_is_valid_once() {
+    struct Connection {
+        once: bool,
+    };
+    struct Handler;
+
+    #[async_trait]
+    impl ManageConnection for Handler {
+        type Connection = Connection;
+        type Error = Error;
+
+        async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+            Ok(Connection { once: false })
+        }
+
+        async fn is_valid(
+            &self,
+            mut conn: Self::Connection,
+        ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+            if !conn.once {
+                conn.once = true;
+                Err((Error, conn))
+            } else {
+                Ok(conn)
+            }
+        }
+
+        fn has_broken(&self, _: &mut Self::Connection) -> bool {
+            false
+        }
+    }
+
+    let mut event_loop = Runtime::new().unwrap();
+
+    let pool = event_loop
+        .block_on(async { Pool::builder().max_size(1).build(Handler).await })
+        .unwrap();
+
+    for _i in 0..2 {
+        event_loop.block_on(async {
+            pool.run(|c: Connection| {
+                async { Ok::<((), Connection), (Error, Connection)>(((), c)) }
+            })
+            .await
+            .unwrap();
+        });
+    }
+}
