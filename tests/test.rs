@@ -661,11 +661,12 @@ fn test_conns_drop_on_pool_drop() {
     );
 }
 
+// make sure that bb8 retries after is_valid fails once
 #[test]
-fn test_is_valid_once() {
-    struct Connection {
-        once: bool,
-    };
+fn test_retry() {
+    static FAILED_ONCE: AtomicBool = AtomicBool::new(false);
+
+    struct Connection;
     struct Handler;
 
     #[async_trait]
@@ -674,18 +675,19 @@ fn test_is_valid_once() {
         type Error = Error;
 
         async fn connect(&self) -> Result<Self::Connection, Self::Error> {
-            Ok(Connection { once: false })
+            Ok(Connection)
         }
 
         async fn is_valid(
             &self,
-            mut conn: Self::Connection,
+            conn: Self::Connection,
         ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
-            if !conn.once {
-                conn.once = true;
-                Err((Error, conn))
-            } else {
+            // only fail once so the retry should work
+            if FAILED_ONCE.load(Ordering::SeqCst) {
                 Ok(conn)
+            } else {
+                FAILED_ONCE.store(true, Ordering::SeqCst);
+                Err((Error, conn))
             }
         }
 
@@ -700,7 +702,8 @@ fn test_is_valid_once() {
         .block_on(async { Pool::builder().max_size(1).build(Handler).await })
         .unwrap();
 
-    for _i in 0..2 {
+    // is_valid() will be called between the 2 iterations
+    for _ in 0..2 {
         event_loop.block_on(async {
             pool.run(|c: Connection| {
                 async { Ok::<((), Connection), (Error, Connection)>(((), c)) }
