@@ -713,3 +713,64 @@ fn test_retry() {
         });
     }
 }
+
+#[test]
+fn test_conn_fail_once() {
+    static FAILED_ONCE: AtomicBool = AtomicBool::new(false);
+    static NB_CALL: AtomicUsize = AtomicUsize::new(0);
+
+    struct Connection;
+    struct Handler;
+
+    impl Connection {
+        fn inc(&mut self) {
+            NB_CALL.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[async_trait]
+    impl ManageConnection for Handler {
+        type Connection = Connection;
+        type Error = Error;
+
+        async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+            // only fail once so the retry should work
+            if FAILED_ONCE.load(Ordering::SeqCst) {
+                Ok(Connection)
+            } else {
+                FAILED_ONCE.store(true, Ordering::SeqCst);
+                Err(Error)
+            }
+        }
+
+        async fn is_valid(
+            &self,
+            conn: Self::Connection,
+        ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+            Ok(conn)
+        }
+
+        fn has_broken(&self, _: &mut Self::Connection) -> bool {
+            false
+        }
+    }
+
+    let mut event_loop = Runtime::new().unwrap();
+
+    let pool = event_loop
+        .block_on(async { Pool::builder().max_size(1).build(Handler).await })
+        .unwrap();
+
+    for _ in 0..2 {
+        event_loop.block_on(async {
+            pool.run(|mut c: Connection| {
+                c.inc();
+                async { Ok::<((), Connection), (Error, Connection)>(((), c)) }
+            })
+            .await
+            .unwrap();
+        });
+    }
+
+    assert_eq!(NB_CALL.load(Ordering::SeqCst), 2);
+}
