@@ -487,7 +487,7 @@ where
                 Err((_, conn)) => {
                     let clone = inner.clone();
                     let locked = clone.internals.lock().await;
-                    let _ = drop_connections(&inner, locked, vec![conn]);
+                    let _ = drop_connections(&inner, locked, vec![conn]).await;
                 }
             };
         }
@@ -723,7 +723,7 @@ impl<M: ManageConnection> Pool<M> {
 
         let mut locked = inner.internals.lock().await;
         if broken {
-            let _ = drop_connections(&inner, locked, vec![conn]);
+            let _ = drop_connections(&inner, locked, vec![conn]).await;
         } else {
             let conn = IdleConn::make_idle(Conn {
                 conn: conn,
