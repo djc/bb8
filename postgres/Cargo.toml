@@ -1,6 +1,6 @@
 [package]
 name = "bb8-postgres"
-version = "0.3.2-pre"
+version = "0.4.0-pre"
 authors = ["Kyle Huey <khuey@kylehuey.com>"]
 description = "r2d2-postgres, but for async tokio based connections"
 license = "MIT"
