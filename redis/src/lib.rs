@@ -24,6 +24,11 @@ impl RedisPool {
         RedisPool { pool }
     }
 
+    /// Access the `bb8::Pool` directly.
+    pub fn pool(&self) -> &bb8::Pool<RedisConnectionManager> {
+        &self.pool
+    }
+
     /// Run the function with a connection provided by the pool.
     pub async fn run<'a, T, E, U, F>(
         &self,
