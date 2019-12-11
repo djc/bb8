@@ -9,12 +9,11 @@ edition = "2018"
 
 [dependencies]
 async-trait = "0.1"
-futures = { version = "0.3.0-alpha.19", package = "futures-preview" }
-tokio-executor = "0.2.0-alpha.6"
-tokio-timer = "0.3.0-alpha.6"
+futures = "0.3"
+tokio = { version = "0.2", features = ["rt-core", "time"] }
 
 [dev-dependencies]
-tokio = "0.2.0-alpha.6"
+tokio = { version = "0.2", features = ["macros"] }
 
 [workspace]
 members = [

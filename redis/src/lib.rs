@@ -30,10 +30,7 @@ impl RedisPool {
     }
 
     /// Run the function with a connection provided by the pool.
-    pub async fn run<'a, T, E, U, F>(
-        &self,
-        f: F,
-    ) -> Result<T, bb8::RunError<E>>
+    pub async fn run<'a, T, E, U, F>(&self, f: F) -> Result<T, bb8::RunError<E>>
     where
         F: FnOnce(Connection) -> U + Send + 'a,
         U: Future<Output = Result<(Connection, T), E>> + Send + 'a,

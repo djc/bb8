@@ -10,6 +10,6 @@ edition = "2018"
 [dependencies]
 async-trait = "0.1"
 bb8 = { path = "../" }
-futures = { version = "0.3.0-alpha.19", package = "futures-preview" }
-tokio = "0.2.0-alpha.6"
+futures = "0.3"
+tokio = "0.2"
 redis = { git = "https://github.com/Marwes/redis-rs/", branch = "async_await_api" }
