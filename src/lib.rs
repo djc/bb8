@@ -26,8 +26,8 @@ use futures::future::ok;
 use futures::lock::{Mutex, MutexGuard};
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
-use tokio_executor::spawn;
-use tokio_timer::{Interval, Timeout};
+use tokio::spawn;
+use tokio::time::{interval_at, timeout, Interval};
 
 mod util;
 use crate::util::*;
@@ -388,7 +388,7 @@ where
         T: Send + 'a,
         E: Send + ::std::fmt::Debug + 'a,
     {
-        Timeout::new(f, self.statics.connection_timeout)
+        timeout(self.statics.connection_timeout, f)
             .map(|r| match r {
                 Ok(Ok(item)) => Ok(Some(item)),
                 Ok(Err(e)) => Err(e),
@@ -579,7 +579,7 @@ where
 {
     spawn(async move {
         loop {
-            let _ = interval.next().await;
+            let _ = interval.tick().await;
             match weak_shared.upgrade() {
                 None => break,
                 Some(shared) => {
@@ -588,7 +588,7 @@ where
                 }
             }
         }
-    })
+    });
 }
 
 impl<M: ManageConnection> Pool<M> {
@@ -609,7 +609,8 @@ impl<M: ManageConnection> Pool<M> {
         if shared.statics.max_lifetime.is_some() || shared.statics.idle_timeout.is_some() {
             let s = Arc::downgrade(&shared);
             if let Some(shared) = s.upgrade() {
-                let interval = Interval::new_interval(shared.statics.reaper_rate);
+                let start = Instant::now() + shared.statics.reaper_rate;
+                let interval = interval_at(start.into(), shared.statics.reaper_rate);
                 schedule_reaping(interval, s);
             }
         }
@@ -639,7 +640,7 @@ impl<M: ManageConnection> Pool<M> {
 
         mem::drop(internals);
 
-        let mut stream = FuturesUnordered::new();
+        let stream = FuturesUnordered::new();
         for _ in idle..max(idle, min(desired, idle + slots_available)) {
             stream.push(add_connection(pool.clone()));
         }
@@ -656,7 +657,7 @@ impl<M: ManageConnection> Pool<M> {
         spawn(async move {
             let f = self.replenish_idle_connections();
             self.sink_error(f).map(|_| ()).await
-        })
+        });
     }
 
     /// Returns a `Builder` instance to configure a new pool.

@@ -13,14 +13,14 @@ edition = "2018"
 "with-eui48-0_4" = ["tokio-postgres/with-eui48-0_4"]
 "with-geo-types-0_4" = ["tokio-postgres/with-geo-types-0_4"]
 "with-serde_json-1" = ["tokio-postgres/with-serde_json-1"]
-"with-uuid-0_7" = ["tokio-postgres/with-uuid-0_7"]
+"with-uuid-0_8" = ["tokio-postgres/with-uuid-0_8"]
 
 [dependencies]
 async-trait = "0.1"
 bb8 = { path = "../" }
-futures = { version = "0.3.0-alpha.19", package = "futures-preview" }
-tokio = "0.2.0-alpha.6"
-tokio-postgres = "0.5.0-alpha.1"
+futures = "0.3"
+tokio = { version = "0.2", features = ["macros"] }
+tokio-postgres = "0.5.1"
 
 [dev-dependencies]
-hyper = { version = "0.13.0-alpha.4", features = ["unstable-stream"] }
+hyper = { version = "0.13" }
