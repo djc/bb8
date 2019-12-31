@@ -102,7 +102,7 @@ impl<E> ErrorSink<E> for NopErrorSink {
     fn sink(&self, _: E) {}
 
     fn boxed_clone(&self) -> Box<dyn ErrorSink<E>> {
-        Box::new(self.clone())
+        Box::new(*self)
     }
 }
 
@@ -148,7 +148,7 @@ where
     fn make_idle(conn: Conn<C>) -> IdleConn<C> {
         let now = Instant::now();
         IdleConn {
-            conn: conn,
+            conn,
             idle_start: now,
         }
     }
@@ -451,10 +451,7 @@ where
         Ok(conn) => {
             let now = Instant::now();
             let conn = IdleConn {
-                conn: Conn {
-                    conn: conn,
-                    birth: now,
-                },
+                conn: Conn { conn, birth: now },
                 idle_start: now,
             };
 
@@ -602,7 +599,7 @@ impl<M: ManageConnection> Pool<M> {
 
         let shared = Arc::new(SharedPool {
             statics: builder,
-            manager: manager,
+            manager,
             internals: Mutex::new(internals),
         });
 
@@ -716,7 +713,7 @@ impl<M: ManageConnection> Pool<M> {
         let birth = conn.birth;
         let (r, mut conn): (Result<_, E>, _) = match f(conn.conn).await {
             Ok((t, conn)) => (Ok(t), conn),
-            Err((e, conn)) => (Err(e.into()), conn),
+            Err((e, conn)) => (Err(e), conn),
         };
 
         // Supposed to be fast, but do it before locking anyways.
@@ -726,14 +723,11 @@ impl<M: ManageConnection> Pool<M> {
         if broken {
             let _ = drop_connections(&inner, locked, vec![conn]).await;
         } else {
-            let conn = IdleConn::make_idle(Conn {
-                conn: conn,
-                birth: birth,
-            });
+            let conn = IdleConn::make_idle(Conn { conn, birth });
             locked.put_idle_conn(conn);
         }
 
-        r.map_err(|e| RunError::User(e))
+        r.map_err(RunError::User)
     }
 
     /// Get a new dedicated connection that will not be managed by the pool.
