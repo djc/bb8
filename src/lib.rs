@@ -31,6 +31,7 @@ use tokio::time::{interval_at, timeout, Interval};
 
 mod util;
 use crate::util::*;
+use std::ops::{Deref, DerefMut};
 
 /// A trait which provides connection-specific functionality.
 #[async_trait]
@@ -81,6 +82,15 @@ where
             RunError::User(ref err) => Some(err),
             RunError::TimedOut => None,
         }
+    }
+}
+
+impl<E> From<E> for RunError<E>
+where
+    E: error::Error,
+{
+    fn from(error: E) -> Self {
+        Self::User(error)
     }
 }
 
@@ -684,10 +694,43 @@ impl<M: ManageConnection> Pool<M> {
         E: From<M::Error> + Send + 'a,
         T: Send + 'a,
     {
-        let inner = self.inner.clone();
-        let inner2 = inner.clone();
-        let conn = match get_idle_connection(inner).await {
+        let conn = match self.get_conn::<E>().await {
             Ok(conn) => conn,
+            Err(e) => return Err(e),
+        };
+
+        let birth = conn.birth;
+        let (r, conn): (Result<_, E>, _) = match f(conn.conn).await {
+            Ok((t, conn)) => (Ok(t), conn),
+            Err((e, conn)) => (Err(e), conn),
+        };
+
+        self.put_back(birth, conn).await;
+
+        r.map_err(RunError::User)
+    }
+
+    /// Return connection back in to the pool
+    async fn put_back(&self, birth: Instant, mut conn: M::Connection) {
+        let inner = self.inner.clone();
+
+        // Supposed to be fast, but do it before locking anyways.
+        let broken = inner.manager.has_broken(&mut conn);
+
+        let mut locked = inner.internals.lock().await;
+        if broken {
+            let _ = drop_connections(&inner, locked, vec![conn]).await;
+        } else {
+            let conn = IdleConn::make_idle(Conn { conn, birth });
+            locked.put_idle_conn(conn);
+        }
+    }
+
+    async fn get_conn<E>(&self) -> Result<Conn<M::Connection>, RunError<E>> {
+        let inner = self.inner.clone();
+
+        match get_idle_connection(inner).await {
+            Ok(conn) => Ok(conn),
             Err(inner) => {
                 let (tx, rx) = oneshot::channel();
                 {
@@ -703,31 +746,22 @@ impl<M: ManageConnection> Pool<M> {
                 }
 
                 match inner.or_timeout(rx).await {
-                    Ok(Some(conn)) => conn,
-                    _ => return Err(RunError::TimedOut),
+                    Ok(Some(conn)) => Ok(conn),
+                    _ => Err(RunError::TimedOut),
                 }
             }
-        };
-
-        let inner = inner2;
-        let birth = conn.birth;
-        let (r, mut conn): (Result<_, E>, _) = match f(conn.conn).await {
-            Ok((t, conn)) => (Ok(t), conn),
-            Err((e, conn)) => (Err(e), conn),
-        };
-
-        // Supposed to be fast, but do it before locking anyways.
-        let broken = inner.manager.has_broken(&mut conn);
-
-        let mut locked = inner.internals.lock().await;
-        if broken {
-            let _ = drop_connections(&inner, locked, vec![conn]).await;
-        } else {
-            let conn = IdleConn::make_idle(Conn { conn, birth });
-            locked.put_idle_conn(conn);
         }
+    }
 
-        r.map_err(RunError::User)
+    /// Retrieves a connection from the pool.
+    pub async fn get(&self) -> Result<PooledConnection<M>, RunError<M::Error>> {
+        let conn = self.get_conn::<M::Error>().await?;
+
+        Ok(PooledConnection {
+            pool: self.clone(),
+            checkout: Instant::now(),
+            conn: Some(conn),
+        })
     }
 
     /// Get a new dedicated connection that will not be managed by the pool.
@@ -739,5 +773,58 @@ impl<M: ManageConnection> Pool<M> {
     pub async fn dedicated_connection(&self) -> Result<M::Connection, M::Error> {
         let inner = self.inner.clone();
         inner.manager.connect().await
+    }
+}
+
+/// A smart pointer wrapping a connection.
+pub struct PooledConnection<M>
+where
+    M: ManageConnection,
+{
+    pool: Pool<M>,
+    checkout: Instant,
+    conn: Option<Conn<M::Connection>>,
+}
+
+impl<M> Deref for PooledConnection<M>
+where
+    M: ManageConnection,
+{
+    type Target = M::Connection;
+
+    fn deref(&self) -> &M::Connection {
+        &self.conn.as_ref().unwrap().conn
+    }
+}
+
+impl<M> DerefMut for PooledConnection<M>
+where
+    M: ManageConnection,
+{
+    fn deref_mut(&mut self) -> &mut M::Connection {
+        &mut self.conn.as_mut().unwrap().conn
+    }
+}
+
+impl<M> fmt::Debug for PooledConnection<M>
+where
+    M: ManageConnection,
+    M::Connection: fmt::Debug,
+{
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.conn.as_ref().unwrap().conn, fmt)
+    }
+}
+
+impl<M> Drop for PooledConnection<M>
+where
+    M: ManageConnection,
+{
+    fn drop(&mut self) {
+        futures::executor::block_on(async {
+            self.pool
+                .put_back(self.checkout, self.conn.take().unwrap().conn)
+                .await;
+        })
     }
 }
