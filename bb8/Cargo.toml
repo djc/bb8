@@ -1,0 +1,17 @@
+[package]
+name = "bb8"
+version = "0.4.0-pre"
+authors = ["Kyle Huey <khuey@kylehuey.com>"]
+description = "r2d2, but for async tokio based connections"
+license = "MIT"
+repository = "https://github.com/khuey/bb8"
+edition = "2018"
+workspace = ".."
+
+[dependencies]
+async-trait = "0.1"
+futures = "0.3"
+tokio = { version = "0.2", features = ["rt-core", "time"] }
+
+[dev-dependencies]
+tokio = { version = "0.2", features = ["macros"] }
