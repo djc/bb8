@@ -754,11 +754,11 @@ impl<M: ManageConnection> Pool<M> {
     }
 
     /// Retrieves a connection from the pool.
-    pub async fn get(&self) -> Result<PooledConnection<M>, RunError<M::Error>> {
+    pub async fn get<'a>(&'a self) -> Result<PooledConnection<'a, M>, RunError<M::Error>> {
         let conn = self.get_conn::<M::Error>().await?;
 
         Ok(PooledConnection {
-            pool: self.clone(),
+            pool: self,
             checkout: Instant::now(),
             conn: Some(conn),
         })
@@ -777,16 +777,16 @@ impl<M: ManageConnection> Pool<M> {
 }
 
 /// A smart pointer wrapping a connection.
-pub struct PooledConnection<M>
+pub struct PooledConnection<'a, M>
 where
     M: ManageConnection,
 {
-    pool: Pool<M>,
+    pool: &'a Pool<M>,
     checkout: Instant,
     conn: Option<Conn<M::Connection>>,
 }
 
-impl<M> Deref for PooledConnection<M>
+impl<'a, M> Deref for PooledConnection<'a, M>
 where
     M: ManageConnection,
 {
@@ -797,7 +797,7 @@ where
     }
 }
 
-impl<M> DerefMut for PooledConnection<M>
+impl<'a, M> DerefMut for PooledConnection<'a, M>
 where
     M: ManageConnection,
 {
@@ -806,7 +806,7 @@ where
     }
 }
 
-impl<M> fmt::Debug for PooledConnection<M>
+impl<'a, M> fmt::Debug for PooledConnection<'a, M>
 where
     M: ManageConnection,
     M::Connection: fmt::Debug,
@@ -816,7 +816,7 @@ where
     }
 }
 
-impl<M> Drop for PooledConnection<M>
+impl<'a, M> Drop for PooledConnection<'a, M>
 where
     M: ManageConnection,
 {
