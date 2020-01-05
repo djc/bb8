@@ -506,20 +506,20 @@ where
             if let Some(pool) = weak_shared.upgrade() {
                 let mut internals = pool.internals.lock().await;
                 let now = Instant::now();
+                let before = internals.conns.len();
 
-                let (to_drop, preserve) = internals.conns.drain(..).partition(|conn| {
-                    let mut reap = false;
+                internals.conns.retain(|conn| {
+                    let mut keep = true;
                     if let Some(timeout) = pool.statics.idle_timeout {
-                        reap |= now - conn.idle_start >= timeout;
+                        keep &= now - conn.idle_start < timeout;
                     }
                     if let Some(lifetime) = pool.statics.max_lifetime {
-                        reap |= now - conn.conn.birth >= lifetime;
+                        keep &= now - conn.conn.birth < lifetime;
                     }
-                    reap
+                    keep
                 });
 
-                internals.conns = preserve;
-                let dropped = to_drop.len();
+                let dropped = before - internals.conns.len();
                 let _ = pool
                     .sink_error(drop_connections(&pool, internals, dropped))
                     .await;
