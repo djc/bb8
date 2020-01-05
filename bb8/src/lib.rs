@@ -29,8 +29,6 @@ use futures::stream::FuturesUnordered;
 use tokio::spawn;
 use tokio::time::{interval_at, timeout, Interval};
 
-mod util;
-use crate::util::*;
 use std::ops::{Deref, DerefMut};
 
 /// A trait which provides connection-specific functionality.
@@ -566,7 +564,7 @@ where
     M: ManageConnection,
 {
     let now = Instant::now();
-    let (to_drop, preserve) = internals.conns.drain(..).partition2(|conn| {
+    let (to_drop, preserve) = internals.conns.drain(..).partition(|conn| {
         let mut reap = false;
         if let Some(timeout) = pool.statics.idle_timeout {
             reap |= now - conn.idle_start >= timeout;
