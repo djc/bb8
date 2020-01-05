@@ -476,52 +476,6 @@ where
     }
 }
 
-async fn get_idle_connection<M>(
-    inner: Arc<SharedPool<M>>,
-) -> Result<Conn<M::Connection>, Arc<SharedPool<M>>>
-where
-    M: ManageConnection + Send,
-    M::Connection: Send,
-    M::Error: Send,
-{
-    let mut validation = None;
-    loop {
-        if let Some((ref mut validator, birth)) = validation {
-            match validator.await {
-                Ok(conn) => return Ok(Conn { conn, birth }),
-                Err((_, conn)) => {
-                    let clone = inner.clone();
-                    let locked = clone.internals.lock().await;
-                    let _ = drop_connections(&inner, locked, vec![conn]).await;
-                }
-            };
-        }
-
-        let mut internals = inner.internals.lock().await;
-        if let Some(conn) = internals.conns.pop_front() {
-            // Spin up a new connection if necessary to retain our minimum idle count
-            if internals.num_conns + internals.pending_conns < inner.statics.max_size {
-                Pool {
-                    inner: inner.clone(),
-                }
-                .spawn_replenishing();
-            } else {
-                // Go ahead and release the lock here.
-                mem::drop(internals);
-            }
-
-            if inner.statics.test_on_check_out {
-                validation = Some((inner.manager.is_valid(conn.conn.conn), conn.conn.birth));
-                continue;
-            } else {
-                return Ok(conn.conn);
-            }
-        } else {
-            return Err(inner.clone());
-        }
-    }
-}
-
 // Drop connections
 // NB: This is called with the pool lock held.
 async fn drop_connections<'a, M>(
@@ -716,27 +670,59 @@ impl<M: ManageConnection> Pool<M> {
     async fn get_conn<E>(&self) -> Result<Conn<M::Connection>, RunError<E>> {
         let inner = self.inner.clone();
 
-        match get_idle_connection(inner).await {
-            Ok(conn) => Ok(conn),
-            Err(inner) => {
-                let (tx, rx) = oneshot::channel();
-                {
-                    let mut locked = inner.internals.lock().await;
-                    locked.waiters.push_back(tx);
-                    if locked.num_conns + locked.pending_conns < inner.statics.max_size {
-                        let inner = inner.clone();
-                        spawn(async move {
-                            let f = add_connection(inner.clone());
-                            inner.sink_error(f).map(|_| ()).await;
-                        });
+        let mut validation = None;
+        loop {
+            if let Some((ref mut validator, birth)) = validation {
+                match validator.await {
+                    Ok(conn) => return Ok(Conn { conn, birth }),
+                    Err((_, conn)) => {
+                        let clone = inner.clone();
+                        let locked = clone.internals.lock().await;
+                        let _ = drop_connections(&inner, locked, vec![conn]).await;
                     }
+                };
+            }
+
+            let mut internals = inner.internals.lock().await;
+            if let Some(conn) = internals.conns.pop_front() {
+                // Spin up a new connection if necessary to retain our minimum idle count
+                if internals.num_conns + internals.pending_conns < inner.statics.max_size {
+                    Pool {
+                        inner: inner.clone(),
+                    }
+                    .spawn_replenishing();
+                } else {
+                    // Go ahead and release the lock here.
+                    mem::drop(internals);
                 }
 
-                match inner.or_timeout(rx).await {
-                    Ok(Some(conn)) => Ok(conn),
-                    _ => Err(RunError::TimedOut),
+                if inner.statics.test_on_check_out {
+                    validation = Some((inner.manager.is_valid(conn.conn.conn), conn.conn.birth));
+                    continue;
+                } else {
+                    return Ok(conn.conn);
                 }
+            } else {
+                break;
             }
+        }
+
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut locked = inner.internals.lock().await;
+            locked.waiters.push_back(tx);
+            if locked.num_conns + locked.pending_conns < inner.statics.max_size {
+                let inner = inner.clone();
+                spawn(async move {
+                    let f = add_connection(inner.clone());
+                    inner.sink_error(f).map(|_| ()).await;
+                });
+            }
+        }
+
+        match inner.or_timeout(rx).await {
+            Ok(Some(conn)) => Ok(conn),
+            _ => Err(RunError::TimedOut),
         }
     }
 
