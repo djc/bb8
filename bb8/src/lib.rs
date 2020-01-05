@@ -481,12 +481,12 @@ where
 async fn drop_connections<'a, M>(
     pool: &Arc<SharedPool<M>>,
     mut internals: MutexGuard<'a, PoolInternals<M::Connection>>,
-    to_drop: Vec<M::Connection>,
+    dropped: usize,
 ) -> Result<(), M::Error>
 where
     M: ManageConnection,
 {
-    internals.num_conns -= to_drop.len() as u32;
+    internals.num_conns -= dropped as u32;
     // We might need to spin up more connections to maintain the idle limit, e.g.
     // if we hit connection lifetime limits
     if internals.num_conns + internals.pending_conns < pool.statics.max_size {
@@ -519,9 +519,9 @@ where
                 });
 
                 internals.conns = preserve;
-                let to_drop = to_drop.into_iter().map(|c| c.conn.conn).collect();
+                let dropped = to_drop.len();
                 let _ = pool
-                    .sink_error(drop_connections(&pool, internals, to_drop))
+                    .sink_error(drop_connections(&pool, internals, dropped))
                     .await;
             } else {
                 break;
@@ -651,7 +651,7 @@ impl<M: ManageConnection> Pool<M> {
 
         let mut locked = inner.internals.lock().await;
         if broken {
-            let _ = drop_connections(&inner, locked, vec![conn]).await;
+            let _ = drop_connections(&inner, locked, 1).await;
         } else {
             let conn = IdleConn::make_idle(Conn { conn, birth });
             locked.put_idle_conn(conn);
@@ -666,10 +666,10 @@ impl<M: ManageConnection> Pool<M> {
             if let Some((ref mut validator, birth)) = validation {
                 match validator.await {
                     Ok(conn) => return Ok(Conn { conn, birth }),
-                    Err((_, conn)) => {
+                    Err(_) => {
                         let clone = inner.clone();
                         let locked = clone.internals.lock().await;
-                        let _ = drop_connections(&inner, locked, vec![conn]).await;
+                        let _ = drop_connections(&inner, locked, 1).await;
                     }
                 };
             }
