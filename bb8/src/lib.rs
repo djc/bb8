@@ -542,18 +542,6 @@ where
     }
 }
 
-async fn drop_idle_connections<'a, M>(
-    pool: &Arc<SharedPool<M>>,
-    internals: MutexGuard<'a, PoolInternals<M::Connection>>,
-    to_drop: Vec<IdleConn<M::Connection>>,
-) -> Result<(), M::Error>
-where
-    M: ManageConnection,
-{
-    let to_drop = to_drop.into_iter().map(|c| c.conn.conn).collect();
-    drop_connections(pool, internals, to_drop).await
-}
-
 // Reap connections if necessary.
 // NB: This is called with the pool lock held.
 async fn reap_connections<'a, M>(
@@ -575,7 +563,8 @@ where
         reap
     });
     internals.conns = preserve;
-    drop_idle_connections(pool, internals, to_drop).await
+    let to_drop = to_drop.into_iter().map(|c| c.conn.conn).collect();
+    drop_connections(pool, internals, to_drop).await
 }
 
 fn schedule_reaping<M>(mut interval: Interval, weak_shared: Weak<SharedPool<M>>)
