@@ -496,31 +496,6 @@ where
     }
 }
 
-// Reap connections if necessary.
-// NB: This is called with the pool lock held.
-async fn reap_connections<'a, M>(
-    pool: &Arc<SharedPool<M>>,
-    mut internals: MutexGuard<'a, PoolInternals<M::Connection>>,
-) -> Result<(), M::Error>
-where
-    M: ManageConnection,
-{
-    let now = Instant::now();
-    let (to_drop, preserve) = internals.conns.drain(..).partition(|conn| {
-        let mut reap = false;
-        if let Some(timeout) = pool.statics.idle_timeout {
-            reap |= now - conn.idle_start >= timeout;
-        }
-        if let Some(lifetime) = pool.statics.max_lifetime {
-            reap |= now - conn.conn.birth >= lifetime;
-        }
-        reap
-    });
-    internals.conns = preserve;
-    let to_drop = to_drop.into_iter().map(|c| c.conn.conn).collect();
-    drop_connections(pool, internals, to_drop).await
-}
-
 fn schedule_reaping<M>(mut interval: Interval, weak_shared: Weak<SharedPool<M>>)
 where
     M: ManageConnection,
@@ -528,12 +503,28 @@ where
     spawn(async move {
         loop {
             let _ = interval.tick().await;
-            match weak_shared.upgrade() {
-                None => break,
-                Some(shared) => {
-                    let locked = shared.internals.lock().await;
-                    let _ = shared.sink_error(reap_connections(&shared, locked)).await;
-                }
+            if let Some(pool) = weak_shared.upgrade() {
+                let mut internals = pool.internals.lock().await;
+                let now = Instant::now();
+
+                let (to_drop, preserve) = internals.conns.drain(..).partition(|conn| {
+                    let mut reap = false;
+                    if let Some(timeout) = pool.statics.idle_timeout {
+                        reap |= now - conn.idle_start >= timeout;
+                    }
+                    if let Some(lifetime) = pool.statics.max_lifetime {
+                        reap |= now - conn.conn.birth >= lifetime;
+                    }
+                    reap
+                });
+
+                internals.conns = preserve;
+                let to_drop = to_drop.into_iter().map(|c| c.conn.conn).collect();
+                let _ = pool
+                    .sink_error(drop_connections(&pool, internals, to_drop))
+                    .await;
+            } else {
+                break;
             }
         }
     });
