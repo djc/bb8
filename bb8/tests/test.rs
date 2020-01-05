@@ -56,10 +56,7 @@ where
         Ok(Default::default())
     }
 
-    async fn is_valid(
-        &self,
-        conn: Self::Connection,
-    ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+    async fn is_valid(&self, conn: Self::Connection) -> Result<Self::Connection, Self::Error> {
         Ok(conn)
     }
 
@@ -100,10 +97,7 @@ where
         }
     }
 
-    async fn is_valid(
-        &self,
-        conn: Self::Connection,
-    ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+    async fn is_valid(&self, conn: Self::Connection) -> Result<Self::Connection, Self::Error> {
         Ok(conn)
     }
 
@@ -246,10 +240,7 @@ async fn test_drop_on_broken() {
             Ok(Default::default())
         }
 
-        async fn is_valid(
-            &self,
-            conn: Self::Connection,
-        ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+        async fn is_valid(&self, conn: Self::Connection) -> Result<Self::Connection, Self::Error> {
             Ok(conn)
         }
 
@@ -359,14 +350,11 @@ async fn test_now_invalid() {
             }
         }
 
-        async fn is_valid(
-            &self,
-            conn: Self::Connection,
-        ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+        async fn is_valid(&self, conn: Self::Connection) -> Result<Self::Connection, Self::Error> {
             println!("Called is_valid");
             if INVALID.load(Ordering::SeqCst) {
                 println!("Not");
-                Err((Error, conn))
+                Err(Error)
             } else {
                 println!("Is");
                 Ok(conn)
@@ -582,10 +570,7 @@ async fn test_conns_drop_on_pool_drop() {
             Ok(Connection)
         }
 
-        async fn is_valid(
-            &self,
-            conn: Self::Connection,
-        ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+        async fn is_valid(&self, conn: Self::Connection) -> Result<Self::Connection, Self::Error> {
             Ok(conn)
         }
 
@@ -637,16 +622,13 @@ async fn test_retry() {
             Ok(Connection)
         }
 
-        async fn is_valid(
-            &self,
-            conn: Self::Connection,
-        ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+        async fn is_valid(&self, conn: Self::Connection) -> Result<Self::Connection, Self::Error> {
             // only fail once so the retry should work
             if FAILED_ONCE.load(Ordering::SeqCst) {
                 Ok(conn)
             } else {
                 FAILED_ONCE.store(true, Ordering::SeqCst);
-                Err((Error, conn))
+                Err(Error)
             }
         }
 
@@ -694,10 +676,7 @@ async fn test_conn_fail_once() {
             }
         }
 
-        async fn is_valid(
-            &self,
-            conn: Self::Connection,
-        ) -> Result<Self::Connection, (Self::Error, Self::Connection)> {
+        async fn is_valid(&self, conn: Self::Connection) -> Result<Self::Connection, Self::Error> {
             Ok(conn)
         }
 

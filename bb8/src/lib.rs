@@ -42,10 +42,7 @@ pub trait ManageConnection: Send + Sync + 'static {
     /// Attempts to create a new connection.
     async fn connect(&self) -> Result<Self::Connection, Self::Error>;
     /// Determines if the connection is still connected to the database.
-    async fn is_valid(
-        &self,
-        conn: Self::Connection,
-    ) -> Result<Self::Connection, (Self::Error, Self::Connection)>;
+    async fn is_valid(&self, conn: Self::Connection) -> Result<Self::Connection, Self::Error>;
     /// Synchronously determine if the connection is no longer usable, if possible.
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
 }
