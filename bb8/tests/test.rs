@@ -717,7 +717,7 @@ async fn test_guard() {
         tx1.send(()).unwrap();
         let res = rx2
             .then(|r| match r {
-                Ok(v) => ok(v),
+                Ok(()) => ok(()),
                 Err(_) => err(Error),
             })
             .await
@@ -734,7 +734,7 @@ async fn test_guard() {
         tx3.send(()).unwrap();
         let res = rx4
             .then(|r| match r {
-                Ok(v) => ok(v),
+                Ok(()) => ok(()),
                 Err(_) => err(Error),
             })
             .await
@@ -756,7 +756,7 @@ async fn test_guard() {
         tx5.send(()).unwrap();
         let res = rx6
             .then(|r| match r {
-                Ok(v) => ok(v),
+                Ok(()) => ok(()),
                 Err(_) => err(Error),
             })
             .await
