@@ -29,10 +29,7 @@ where
 {
     /// Create a new `PostgresConnectionManager` with the specified `config`.
     pub fn new(config: Config, tls: Tls) -> PostgresConnectionManager<Tls> {
-        PostgresConnectionManager {
-            config: config,
-            tls: tls,
-        }
+        PostgresConnectionManager { config, tls }
     }
 
     /// Create a new `PostgresConnectionManager`, parsing the config from `params`.
