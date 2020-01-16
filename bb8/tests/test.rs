@@ -264,6 +264,7 @@ async fn test_drop_on_broken() {
 async fn test_initialization_failure() {
     let manager = NthConnectionFailManager::<FakeConnection>::new(0);
     let e = Pool::builder()
+        .connection_timeout(Duration::from_secs(5))
         .max_size(1)
         .min_idle(Some(1))
         .build(manager)
