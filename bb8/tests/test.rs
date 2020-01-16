@@ -699,3 +699,83 @@ async fn test_conn_fail_once() {
 
     assert_eq!(NB_CALL.load(Ordering::SeqCst), 2);
 }
+
+// This mimics the test_acquire_release test, but using the `get()` API.
+#[tokio::test]
+async fn test_guard() {
+    let pool = Pool::builder()
+        .max_size(2)
+        .build(OkManager::<FakeConnection>::new())
+        .await
+        .unwrap();
+
+    let (tx1, rx1) = oneshot::channel();
+    let (tx2, rx2) = oneshot::channel();
+    let clone = pool.clone();
+    tokio::spawn(async move {
+        let conn = clone.get().await;
+        tx1.send(()).unwrap();
+        let res = rx2
+            .then(|r| match r {
+                Ok(v) => ok(v),
+                Err(_) => err(Error),
+            })
+            .await
+            .map(|_| ());
+        drop(conn);
+        res
+    });
+
+    let (tx3, rx3) = oneshot::channel();
+    let (tx4, rx4) = oneshot::channel();
+    let clone = pool.clone();
+    tokio::spawn(async move {
+        let conn = clone.get().await;
+        tx3.send(()).unwrap();
+        let res = rx4
+            .then(|r| match r {
+                Ok(v) => ok(v),
+                Err(_) => err(Error),
+            })
+            .await
+            .map(|_| ());
+        drop(conn);
+        res
+    });
+
+    // Get the first connection.
+    rx1.await.unwrap();
+    // Get the second connection.
+    rx3.await.unwrap();
+
+    let (tx5, mut rx5) = oneshot::channel();
+    let (tx6, rx6) = oneshot::channel();
+    let clone = pool.clone();
+    tokio::spawn(async move {
+        let conn = clone.get().await;
+        tx5.send(()).unwrap();
+        let res = rx6
+            .then(|r| match r {
+                Ok(v) => ok(v),
+                Err(_) => err(Error),
+            })
+            .await
+            .map(|_| ());
+        drop(conn);
+        res
+    });
+
+    {
+        let rx5_ref = &mut rx5;
+        // NB: The channel needs to run on a Task, so shove it onto
+        // the tokio event loop with a lazy.
+        assert_eq!(lazy(|cx| Pin::new(rx5_ref).poll(cx)).await, Poll::Pending);
+    }
+
+    // Release the first connection.
+    tx2.send(()).unwrap();
+
+    rx5.await.unwrap();
+    tx4.send(()).unwrap();
+    tx6.send(()).unwrap();
+}
