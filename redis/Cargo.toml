@@ -11,5 +11,4 @@ edition = "2018"
 async-trait = "0.1"
 bb8 = { path = "../bb8" }
 futures = "0.3"
-tokio = "0.2"
 redis = "0.15"
