@@ -570,13 +570,9 @@ impl<M: ManageConnection> Pool<M> {
         self.inner.sink_error(f).await
     }
 
-    async fn replenish_idle_connections_locked(
-        pool: Arc<SharedPool<M>>,
-        internals: MutexGuard<'_, PoolInternals<M::Connection>>,
-    ) -> Result<(), M::Error>
-    where
-        M: ManageConnection,
-    {
+    async fn replenish_idle_connections(&self) -> Result<(), M::Error> {
+        let internals = self.inner.internals.lock().await;
+        let pool = self.inner.clone();
         let slots_available = pool.statics.max_size - internals.num_conns - internals.pending_conns;
         let idle = internals.conns.len() as u32;
         let desired = pool.statics.min_idle.unwrap_or(0);
@@ -589,11 +585,6 @@ impl<M: ManageConnection> Pool<M> {
         }
 
         stream.try_fold((), |_, _| ok(())).await
-    }
-
-    async fn replenish_idle_connections(&self) -> Result<(), M::Error> {
-        let locked = self.inner.internals.lock().await;
-        Pool::replenish_idle_connections_locked(self.inner.clone(), locked).await
     }
 
     fn spawn_replenishing(self) {
