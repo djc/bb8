@@ -315,7 +315,7 @@ impl<M: ManageConnection> Builder<M> {
     /// minimum number of connections, or it times out.
     pub async fn build(self, manager: M) -> Result<Pool<M>, M::Error> {
         let pool = self.build_inner(manager);
-        pool.replenish_idle_connections().await.map(|_| pool)
+        pool.replenish_idle_connections().await.map(|()| pool)
     }
 
     /// Consumes the builder, returning a new, initialized `Pool`.
