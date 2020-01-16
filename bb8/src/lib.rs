@@ -722,7 +722,7 @@ impl<M: ManageConnection> Pool<M> {
     }
 
     /// Retrieves a connection from the pool.
-    pub async fn get<'a>(&'a self) -> Result<PooledConnection<'a, M>, RunError<M::Error>> {
+    pub async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
         let conn = self.get_conn::<M::Error>().await?;
 
         Ok(PooledConnection {
