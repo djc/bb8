@@ -1,6 +1,6 @@
 [package]
 name = "bb8-postgres"
-version = "0.4.0-pre"
+version = "0.4.0"
 authors = ["Kyle Huey <khuey@kylehuey.com>"]
 description = "r2d2-postgres, but for async tokio based connections"
 license = "MIT"
@@ -17,7 +17,7 @@ edition = "2018"
 
 [dependencies]
 async-trait = "0.1"
-bb8 = { path = "../bb8" }
+bb8 = { version = "0.4.0", path = "../bb8" }
 futures = "0.3"
 tokio = { version = "0.2", features = ["rt-core"] }
 tokio-postgres = "0.5.1"
