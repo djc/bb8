@@ -27,7 +27,7 @@ use futures::lock::{Mutex, MutexGuard};
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use tokio::spawn;
-use tokio::time::{interval_at, timeout, Interval};
+use tokio::time::{delay_for, interval_at, timeout, Interval};
 
 use std::ops::{Deref, DerefMut};
 
@@ -450,25 +450,34 @@ where
         Some(shared) => shared,
     };
 
-    let result = shared.manager.connect().await;
-    let mut locked = shared.internals.lock().await;
-    match result {
-        Ok(conn) => {
-            let now = Instant::now();
-            let conn = IdleConn {
-                conn: Conn { conn, birth: now },
-                idle_start: now,
-            };
+    let start = Instant::now();
+    let mut delay = Duration::from_secs(0);
+    loop {
+        match shared.manager.connect().await {
+            Ok(conn) => {
+                let now = Instant::now();
+                let conn = IdleConn {
+                    conn: Conn { conn, birth: now },
+                    idle_start: now,
+                };
 
-            locked.pending_conns -= 1;
-            locked.num_conns += 1;
-            locked.put_idle_conn(conn);
-            Ok(())
-        }
-        Err(err) => {
-            locked.pending_conns -= 1;
-            // TODO: retry?
-            Err(err)
+                let mut locked = shared.internals.lock().await;
+                locked.pending_conns -= 1;
+                locked.num_conns += 1;
+                locked.put_idle_conn(conn);
+                return Ok(());
+            }
+            Err(e) => {
+                if Instant::now() - start > pool.statics.connection_timeout {
+                    let mut locked = shared.internals.lock().await;
+                    locked.pending_conns -= 1;
+                    return Err(e);
+                } else {
+                    delay = max(Duration::from_millis(200), delay);
+                    delay = min(pool.statics.connection_timeout / 2, delay * 2);
+                    delay_for(delay).await;
+                }
+            }
         }
     }
 }
