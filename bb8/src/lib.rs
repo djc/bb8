@@ -475,21 +475,21 @@ where
 
 // Drop connections
 // NB: This is called with the pool lock held.
-async fn drop_connections<'a, M>(
+fn drop_connections<'a, M>(
     pool: &Arc<SharedPool<M>>,
     mut internals: MutexGuard<'a, PoolInternals<M::Connection>>,
     dropped: usize,
-) -> Result<(), M::Error>
-where
+) where
     M: ManageConnection,
 {
     internals.num_conns -= dropped as u32;
     // We might need to spin up more connections to maintain the idle limit, e.g.
     // if we hit connection lifetime limits
     if internals.num_conns + internals.pending_conns < pool.statics.max_size {
-        Pool::replenish_idle_connections_locked(pool.clone(), internals).await
-    } else {
-        Ok(())
+        Pool {
+            inner: pool.clone(),
+        }
+        .spawn_replenishing();
     }
 }
 
@@ -517,9 +517,7 @@ where
                 });
 
                 let dropped = before - internals.conns.len();
-                let _ = pool
-                    .sink_error(drop_connections(&pool, internals, dropped))
-                    .await;
+                drop_connections(&pool, internals, dropped);
             } else {
                 break;
             }
@@ -648,7 +646,7 @@ impl<M: ManageConnection> Pool<M> {
 
         let mut locked = inner.internals.lock().await;
         if broken {
-            let _ = drop_connections(&inner, locked, 1).await;
+            drop_connections(&inner, locked, 1);
         } else {
             let conn = IdleConn::make_idle(Conn { conn, birth });
             locked.put_idle_conn(conn);
@@ -666,7 +664,7 @@ impl<M: ManageConnection> Pool<M> {
                     Err(_) => {
                         let clone = inner.clone();
                         let locked = clone.internals.lock().await;
-                        let _ = drop_connections(&inner, locked, 1).await;
+                        drop_connections(&inner, locked, 1);
                     }
                 };
             }
