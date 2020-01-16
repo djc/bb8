@@ -263,14 +263,13 @@ async fn test_drop_on_broken() {
 #[tokio::test]
 async fn test_initialization_failure() {
     let manager = NthConnectionFailManager::<FakeConnection>::new(0);
-    let e = Pool::builder()
+    let res = Pool::builder()
         .connection_timeout(Duration::from_secs(5))
         .max_size(1)
         .min_idle(Some(1))
         .build(manager)
         .await;
-    assert!(e.is_err());
-    assert_eq!(e.unwrap_err(), Error);
+    assert_eq!(res.unwrap_err(), Error);
 }
 
 #[tokio::test]
@@ -280,14 +279,13 @@ async fn test_lazy_initialization_failure() {
         .connection_timeout(Duration::from_secs(1))
         .build_unchecked(manager);
 
-    let e = pool
+    let res = pool
         .run(move |conn| {
             let r: Result<_, (Error, _)> = Ok(((), conn));
             ready(r)
         })
         .await;
-    assert!(e.is_err());
-    assert_eq!(e.unwrap_err(), bb8::RunError::TimedOut);
+    assert_eq!(res.unwrap_err(), bb8::RunError::TimedOut);
 }
 
 #[tokio::test]
