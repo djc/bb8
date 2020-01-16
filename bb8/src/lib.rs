@@ -17,6 +17,7 @@ use std::error;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
+use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -28,8 +29,6 @@ use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use tokio::spawn;
 use tokio::time::{delay_for, interval_at, timeout, Interval};
-
-use std::ops::{Deref, DerefMut};
 
 /// A trait which provides connection-specific functionality.
 #[async_trait]
