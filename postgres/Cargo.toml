@@ -24,4 +24,6 @@ tokio-postgres = "0.5.1"
 
 [dev-dependencies]
 hyper = { version = "0.13" }
+actix-web = { version = "2.0.0" }
+actix-rt = "1.0.0"
 tokio = { version = "0.2", features = ["rt-threaded"] }
