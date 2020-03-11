@@ -8,7 +8,7 @@ use futures::future::{Future, FutureExt};
 
 use async_trait::async_trait;
 use redis::aio::Connection;
-use redis::{Client, RedisError};
+use redis::{Client, IntoConnectionInfo, RedisError};
 
 /// `RedisPool` is a convenience wrapper around `bb8::Pool` that hides the fact that
 /// `RedisConnectionManager` uses an `Option<Connection>` to smooth over the API incompatibility.
@@ -56,8 +56,10 @@ pub struct RedisConnectionManager {
 
 impl RedisConnectionManager {
     /// Create a new `RedisConnectionManager`.
-    pub fn new(client: Client) -> Result<RedisConnectionManager, RedisError> {
-        Ok(RedisConnectionManager { client })
+    pub fn new<T: IntoConnectionInfo>(info: T) -> Result<RedisConnectionManager, RedisError> {
+        Ok(RedisConnectionManager {
+            client: Client::open(info.into_connection_info()?)?,
+        })
     }
 }
 
@@ -67,10 +69,8 @@ impl bb8::ManageConnection for RedisConnectionManager {
     type Error = RedisError;
 
     async fn connect(&self) -> Result<Self::Connection, Self::Error> {
-        match self.client.get_async_connection().await {
-            Ok(conn) => Ok(Some(conn)),
-            Err(e) => Err(e),
-        }
+        let conn = self.client.get_async_connection().await?;
+        Ok(Some(conn))
     }
 
     async fn is_valid(&self, mut conn: Self::Connection) -> Result<Self::Connection, Self::Error> {

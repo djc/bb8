@@ -19,7 +19,7 @@ A (possibly not exhaustive) list of adaptors for different backends:
 Backend | Adaptor Crate
 ------- | -------------
 [tokio-postgres](https://github.com/sfackler/rust-postgres) | [bb8-postgres](https://crates.io/crates/bb8-postgres)
-[redis (git master)](https://github.com/mitsuhiko/redis-rs) | [bb8-redis](https://crates.io/crates/bb8-redis)
+[redis](https://github.com/mitsuhiko/redis-rs) | [bb8-redis](https://crates.io/crates/bb8-redis)
 
 
 
