@@ -24,20 +24,18 @@ async fn main() {
     };
 
     let _ = pool
-        .run(|connection| {
-            async {
-                let select = match connection.prepare("SELECT 1").await {
-                    Ok(stmt) => stmt,
-                    Err(e) => return Err((e, connection)),
-                };
+        .run(|connection| async {
+            let select = match connection.prepare("SELECT 1").await {
+                Ok(stmt) => stmt,
+                Err(e) => return Err((e, connection)),
+            };
 
-                match connection.query_one(&select, &[]).await {
-                    Ok(row) => {
-                        println!("result: {}", row.get::<usize, i32>(0));
-                        Ok(((), connection))
-                    }
-                    Err(e) => Err((e, connection)),
+            match connection.query_one(&select, &[]).await {
+                Ok(row) => {
+                    println!("result: {}", row.get::<usize, i32>(0));
+                    Ok(((), connection))
                 }
+                Err(e) => Err((e, connection)),
             }
         })
         .await
