@@ -37,25 +37,21 @@ async fn main() {
                         println!("Got request");
 
                         let result = pool
-                            .run(move |connection| {
-                                async {
-                                    match connection.prepare("SELECT 1").await {
-                                        Ok(select) => {
-                                            match connection.query_one(&select, &[]).await {
-                                                Ok(row) => {
-                                                    let v = row.get::<usize, i32>(0);
-                                                    println!("Sending success response");
-                                                    let rsp = Response::new(Body::from(format!(
-                                                        "Got results {:?}",
-                                                        v
-                                                    )));
-                                                    Ok((rsp, connection))
-                                                }
-                                                Err(e) => Err((e, connection)),
-                                            }
+                            .run(move |connection| async {
+                                match connection.prepare("SELECT 1").await {
+                                    Ok(select) => match connection.query_one(&select, &[]).await {
+                                        Ok(row) => {
+                                            let v = row.get::<usize, i32>(0);
+                                            println!("Sending success response");
+                                            let rsp = Response::new(Body::from(format!(
+                                                "Got results {:?}",
+                                                v
+                                            )));
+                                            Ok((rsp, connection))
                                         }
                                         Err(e) => Err((e, connection)),
-                                    }
+                                    },
+                                    Err(e) => Err((e, connection)),
                                 }
                             })
                             .await;
