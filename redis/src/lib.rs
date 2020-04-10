@@ -1,4 +1,39 @@
 //! Redis support for the `bb8` connection pool.
+//!
+//! # Example
+//!
+//! ```
+//! use futures::future::join_all;
+//! use bb8_redis::{
+//!     bb8,
+//!     redis::{cmd, AsyncCommands},
+//!     RedisConnectionManager, RedisPool
+//! };
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let manager = RedisConnectionManager::new("redis://localhost").unwrap();
+//!     let pool = RedisPool::new(bb8::Pool::builder().build(manager).await.unwrap());
+//!
+//!     let mut handles = vec![];
+//!
+//!     for _i in 0..10 {
+//!         let pool = pool.clone();
+//!
+//!         handles.push(tokio::spawn(async move {
+//!             let mut conn = pool.get().await.unwrap();
+//!             let conn = conn.as_mut().unwrap();
+//!
+//!             let reply: String = cmd("PING").query_async(conn).await.unwrap();
+//!
+//!             assert_eq!("PONG", reply);
+//!         }));
+//!     }
+//!
+//!     join_all(handles).await;
+//! }
+//! ```
+#![allow(clippy::needless_doctest_main)]
 #![deny(missing_docs, missing_debug_implementations)]
 
 pub use bb8;
@@ -29,6 +64,13 @@ impl RedisPool {
         &self.pool
     }
 
+    /// Retrieve the pooled connection
+    pub async fn get(
+        &self,
+    ) -> Result<bb8::PooledConnection<'_, RedisConnectionManager>, bb8::RunError<RedisError>> {
+        self.pool().get().await
+    }
+
     /// Run the function with a connection provided by the pool.
     pub async fn run<'a, T, E, U, F>(&self, f: F) -> Result<T, bb8::RunError<E>>
     where
@@ -48,7 +90,7 @@ impl RedisPool {
     }
 }
 
-/// A `bb8::ManageConnection` for `redis::async::Connection`s.
+/// A `bb8::ManageConnection` for `redis::Client::get_async_connection`.
 #[derive(Clone, Debug)]
 pub struct RedisConnectionManager {
     client: Client,
@@ -56,6 +98,7 @@ pub struct RedisConnectionManager {
 
 impl RedisConnectionManager {
     /// Create a new `RedisConnectionManager`.
+    /// See `redis::Client::open` for a description of the parameter types.
     pub fn new<T: IntoConnectionInfo>(info: T) -> Result<RedisConnectionManager, RedisError> {
         Ok(RedisConnectionManager {
             client: Client::open(info.into_connection_info()?)?,
@@ -69,8 +112,7 @@ impl bb8::ManageConnection for RedisConnectionManager {
     type Error = RedisError;
 
     async fn connect(&self) -> Result<Self::Connection, Self::Error> {
-        let conn = self.client.get_async_connection().await?;
-        Ok(Some(conn))
+        self.client.get_async_connection().await.map(Some)
     }
 
     async fn is_valid(&self, mut conn: Self::Connection) -> Result<Self::Connection, Self::Error> {
