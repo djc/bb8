@@ -9,6 +9,31 @@
 //! bb8 is agnostic to the connection type it is managing. Implementors of the
 //! `ManageConnection` trait provide the database-specific logic to create and
 //! check the health of connections.
+//!
+//! # Example
+//!
+//! Using an imaginary "foodb" database.
+//!
+//! ```ignore
+//! use bb8;
+//! use bb8_foodb;
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let manager = bb8_foodb::FooConnectionManager::new("localhost:1234");
+//!     let pool = bb8::Pool::builder().build(manager).await.unwrap();
+//!
+//!     for _ in 0..20 {
+//!         let pool = pool.clone();
+//!         tokio::spawn(async move {
+//!             let conn = pool.get().await.unwrap();
+//!             // use the connection
+//!             // it will be returned to the pool when it falls out of scope.
+//!         });
+//!     }
+//! }
+//! ```
+#![allow(clippy::needless_doctest_main)]
 #![deny(missing_docs, missing_debug_implementations)]
 
 use std::cmp::{max, min};

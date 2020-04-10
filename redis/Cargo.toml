@@ -12,3 +12,6 @@ async-trait = "0.1"
 bb8 = { version = "0.4.0", path = "../bb8" }
 futures = "0.3"
 redis = "0.15"
+
+[dev-dependencies]
+tokio = { version = "0.2", features = ["macros"] }
