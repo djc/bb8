@@ -738,13 +738,15 @@ impl<M: ManageConnection> Pool<M> {
 
     /// Retrieves a connection from the pool.
     pub async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
-        self.get_conn::<M::Error>().map(move |res|
-            res.map(|conn| PooledConnection {
-                pool: self,
-                checkout: Instant::now(),
-                conn: Some(conn),
+        self.get_conn::<M::Error>()
+            .map(move |res| {
+                res.map(|conn| PooledConnection {
+                    pool: self,
+                    checkout: Instant::now(),
+                    conn: Some(conn),
+                })
             })
-        ).await
+            .await
     }
 
     /// Get a new dedicated connection that will not be managed by the pool.
