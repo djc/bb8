@@ -1,6 +1,6 @@
 [package]
 name = "bb8"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["Kyle Huey <khuey@kylehuey.com>", "Dirkjan Ochtman <dirkjan@ochtman.nl>"]
 description = "r2d2, but for async tokio based connections"
 license = "MIT"
