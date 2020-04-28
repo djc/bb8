@@ -19,7 +19,7 @@ edition = "2018"
 async-trait = "0.1"
 bb8 = { version = "0.4.0", path = "../bb8" }
 futures = "0.3"
-tokio = { version = "0.2", features = ["rt-core"] }
+tokio = { version = "0.2", features = ["rt-core", "macros"] }
 tokio-postgres = "0.5.1"
 
 [dev-dependencies]
