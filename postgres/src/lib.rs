@@ -70,8 +70,8 @@ where
             })
     }
 
-    async fn is_valid(&self, conn: Self::Connection) -> Result<Self::Connection, Self::Error> {
-        conn.simple_query("").await.map(|_| conn)
+    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
+        conn.simple_query("").await.map(|_| ())
     }
 
     fn has_broken(&self, conn: &mut Self::Connection) -> bool {

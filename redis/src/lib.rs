@@ -115,12 +115,11 @@ impl bb8::ManageConnection for RedisConnectionManager {
         self.client.get_async_connection().await.map(Some)
     }
 
-    async fn is_valid(&self, mut conn: Self::Connection) -> Result<Self::Connection, Self::Error> {
+    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
         // The connection should only be None after a failure.
         redis::cmd("PING")
             .query_async(conn.as_mut().unwrap())
             .await
-            .map(|()| conn)
     }
 
     fn has_broken(&self, conn: &mut Self::Connection) -> bool {

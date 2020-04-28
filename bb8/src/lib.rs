@@ -510,7 +510,7 @@ where
 // NB: This is called with the pool lock held.
 fn drop_connections<'a, M>(
     pool: &Arc<SharedPool<M>>,
-    mut internals: MutexGuard<'a, PoolInternals<M::Connection>>,
+    internals: &mut MutexGuard<'a, PoolInternals<M::Connection>>,
     dropped: usize,
 ) where
     M: ManageConnection,
@@ -550,7 +550,7 @@ where
                 });
 
                 let dropped = before - internals.conns.len();
-                drop_connections(&pool, internals, dropped);
+                drop_connections(&pool, &mut internals, dropped);
             } else {
                 break;
             }
@@ -670,7 +670,7 @@ impl<M: ManageConnection> Pool<M> {
 
         let mut locked = inner.internals.lock().await;
         if broken {
-            drop_connections(&inner, locked, 1);
+            drop_connections(&inner, &mut locked, 1);
         } else {
             let conn = IdleConn::make_idle(Conn { conn, birth });
             locked.put_idle_conn(conn);
@@ -689,22 +689,17 @@ impl<M: ManageConnection> Pool<M> {
                         inner: inner.clone(),
                     }
                     .spawn_replenishing();
-                } else {
-                    // Go ahead and release the lock here.
-                    mem::drop(internals);
                 }
 
                 if inner.statics.test_on_check_out {
                     let (mut conn, birth) = (conn.conn.conn, conn.conn.birth);
 
-                    match inner.manager.is_valid(&mut conn).await {  
+                    match inner.manager.is_valid(&mut conn).await {
                         Ok(()) => return Ok(Conn { conn: conn, birth }),
                         Err(_) => {
                             println!("Dropping connection...");
                             mem::drop(conn);
-                            let clone = inner.clone();
-                            let locked = clone.internals.lock().await;
-                            drop_connections(&inner, locked, 1);
+                            drop_connections(&inner, &mut internals, 1);
                         }
                     }
                     continue;
