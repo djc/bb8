@@ -695,7 +695,7 @@ impl<M: ManageConnection> Pool<M> {
                     let (mut conn, birth) = (conn.conn.conn, conn.conn.birth);
 
                     match inner.manager.is_valid(&mut conn).await {
-                        Ok(()) => return Ok(Conn { conn: conn, birth }),
+                        Ok(()) => return Ok(Conn { conn, birth }),
                         Err(_) => {
                             println!("Dropping connection...");
                             mem::drop(conn);
