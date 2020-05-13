@@ -1,6 +1,3 @@
-use tokio;
-use tokio_postgres;
-
 use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
 

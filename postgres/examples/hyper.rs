@@ -1,12 +1,7 @@
-use hyper;
-
-use tokio_postgres;
-
 use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Error, Response, Server};
-use tokio;
 
 // Select some static data from a Postgres DB and return it via hyper.
 //
