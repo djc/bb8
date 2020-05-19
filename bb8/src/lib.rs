@@ -66,7 +66,7 @@ pub trait ManageConnection: Send + Sync + 'static {
     /// Attempts to create a new connection.
     async fn connect(&self) -> Result<Self::Connection, Self::Error>;
     /// Determines if the connection is still connected to the database.
-    async fn is_valid(&self, conn: Self::Connection) -> Result<Self::Connection, Self::Error>;
+    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error>;
     /// Synchronously determine if the connection is no longer usable, if possible.
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
 }
@@ -510,7 +510,7 @@ where
 // NB: This is called with the pool lock held.
 fn drop_connections<'a, M>(
     pool: &Arc<SharedPool<M>>,
-    mut internals: MutexGuard<'a, PoolInternals<M::Connection>>,
+    internals: &mut MutexGuard<'a, PoolInternals<M::Connection>>,
     dropped: usize,
 ) where
     M: ManageConnection,
@@ -550,7 +550,7 @@ where
                 });
 
                 let dropped = before - internals.conns.len();
-                drop_connections(&pool, internals, dropped);
+                drop_connections(&pool, &mut internals, dropped);
             } else {
                 break;
             }
@@ -670,7 +670,7 @@ impl<M: ManageConnection> Pool<M> {
 
         let mut locked = inner.internals.lock().await;
         if broken {
-            drop_connections(&inner, locked, 1);
+            drop_connections(&inner, &mut locked, 1);
         } else {
             let conn = IdleConn::make_idle(Conn { conn, birth });
             locked.put_idle_conn(conn);
@@ -680,19 +680,7 @@ impl<M: ManageConnection> Pool<M> {
     async fn get_conn<E>(&self) -> Result<Conn<M::Connection>, RunError<E>> {
         let inner = self.inner.clone();
 
-        let mut validation = None;
         loop {
-            if let Some((ref mut validator, birth)) = validation {
-                match validator.await {
-                    Ok(conn) => return Ok(Conn { conn, birth }),
-                    Err(_) => {
-                        let clone = inner.clone();
-                        let locked = clone.internals.lock().await;
-                        drop_connections(&inner, locked, 1);
-                    }
-                };
-            }
-
             let mut internals = inner.internals.lock().await;
             if let Some(conn) = internals.conns.pop_front() {
                 // Spin up a new connection if necessary to retain our minimum idle count
@@ -701,13 +689,18 @@ impl<M: ManageConnection> Pool<M> {
                         inner: inner.clone(),
                     }
                     .spawn_replenishing();
-                } else {
-                    // Go ahead and release the lock here.
-                    mem::drop(internals);
                 }
 
                 if inner.statics.test_on_check_out {
-                    validation = Some((inner.manager.is_valid(conn.conn.conn), conn.conn.birth));
+                    let (mut conn, birth) = (conn.conn.conn, conn.conn.birth);
+
+                    match inner.manager.is_valid(&mut conn).await {
+                        Ok(()) => return Ok(Conn { conn, birth }),
+                        Err(_) => {
+                            mem::drop(conn);
+                            drop_connections(&inner, &mut internals, 1);
+                        }
+                    }
                     continue;
                 } else {
                     return Ok(conn.conn);
