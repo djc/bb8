@@ -49,10 +49,10 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use futures::channel::oneshot;
 use futures::future::ok;
-use futures::lock::{Mutex, MutexGuard};
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use tokio::spawn;
+use tokio::sync::{Mutex, MutexGuard};
 use tokio::time::{delay_for, interval_at, timeout, Interval};
 
 /// A trait which provides connection-specific functionality.
@@ -625,11 +625,12 @@ impl<M: ManageConnection> Pool<M> {
 
     /// Returns information about the current state of the pool.
     pub fn state(&self) -> State {
-        let mut locked = self.inner.internals.try_lock();
-        while locked.is_none() {
-            locked = self.inner.internals.try_lock();
-        }
-        let locked = locked.unwrap();
+        let locked = loop {
+            if let Ok(internals) = self.inner.internals.try_lock() {
+                break internals;
+            }
+        };
+
         State {
             connections: locked.num_conns,
             idle_connections: locked.conns.len() as u32,
