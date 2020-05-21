@@ -648,26 +648,15 @@ impl<M: ManageConnection> Pool<M> {
     }
 
     /// Run a closure with a `Connection`.
-    pub async fn run<'a, T, E, U, F>(&self, f: F) -> Result<T, RunError<E>>
+    pub async fn run<'a, T, E, U, F>(&'a self, f: F) -> Result<T, RunError<E>>
     where
-        F: FnOnce(M::Connection) -> U + Send + 'a,
-        U: Future<Output = Result<(T, M::Connection), (E, M::Connection)>> + Send + 'a,
-        E: From<M::Error> + Send + 'a,
-        T: Send + 'a,
+        F: FnOnce(PooledConnection<'a, M>) -> U + Send,
+        U: Future<Output = Result<T, E>> + Send,
+        E: From<M::Error> + Send,
+        T: Send,
     {
-        let mut pooled = match self.get().await {
-            Ok(conn) => conn,
-            Err(e) => return Err(e.map()),
-        };
-
-        let Conn { conn, birth } = pooled.conn.take().unwrap();
-        let (r, conn): (Result<_, E>, _) = match f(conn).await {
-            Ok((t, conn)) => (Ok(t), conn),
-            Err((e, conn)) => (Err(e), conn),
-        };
-
-        self.put_back(Conn { conn, birth }).await;
-        r.map_err(RunError::User)
+        let pooled = self.get().await.map_err(|e| e.map())?;
+        f(pooled).await.map_err(RunError::User)
     }
 
     /// Return connection back in to the pool

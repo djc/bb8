@@ -32,32 +32,25 @@ async fn main() {
                         println!("Got request");
 
                         let result = pool
-                            .run(move |connection| async {
-                                match connection.prepare("SELECT 1").await {
-                                    Ok(select) => match connection.query_one(&select, &[]).await {
-                                        Ok(row) => {
-                                            let v = row.get::<usize, i32>(0);
-                                            println!("Sending success response");
-                                            let rsp = Response::new(Body::from(format!(
-                                                "Got results {:?}",
-                                                v
-                                            )));
-                                            Ok((rsp, connection))
-                                        }
-                                        Err(e) => Err((e, connection)),
-                                    },
-                                    Err(e) => Err((e, connection)),
-                                }
+                            .run(move |connection| async move {
+                                let select = connection.prepare("SELECT 1").await?;
+                                let row = connection.query_one(&select, &[]).await?;
+                                Ok::<_, bb8_postgres::tokio_postgres::Error>(
+                                    row.get::<usize, i32>(0),
+                                )
                             })
                             .await;
 
-                        Ok::<_, Error>(match result {
-                            Ok(rsp) => rsp,
+                        Ok::<_, Error>(Response::new(Body::from(match result {
+                            Ok(v) => {
+                                println!("Sending success response");
+                                format!("Got results {:?}", v)
+                            }
                             Err(e) => {
                                 println!("Sending error response");
-                                Response::new(Body::from(format!("Internal error {:?}", e)))
+                                format!("Internal error {:?}", e)
                             }
-                        })
+                        })))
                     }
                 }))
             }

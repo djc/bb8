@@ -117,12 +117,9 @@ async fn test_max_size_ok() {
         let (tx2, rx2) = oneshot::channel::<()>();
         let pool = pool.clone();
         tokio::spawn(async move {
-            pool.run(move |conn| {
+            pool.run(move |_| {
                 tx1.send(()).unwrap();
-                rx2.map(|r| match r {
-                    Ok(v) => Ok((v, conn)),
-                    Err(_) => Err((Error, conn)),
-                })
+                rx2.map_err(|_| Error)
             })
             .map(|_| ())
             .await
@@ -147,12 +144,9 @@ async fn test_acquire_release() {
     let clone = pool.clone();
     tokio::spawn(async move {
         clone
-            .run(move |conn| {
+            .run(move |_| {
                 tx1.send(()).unwrap();
-                rx2.then(|r| match r {
-                    Ok(v) => ok((v, conn)),
-                    Err(_) => err((Error, conn)),
-                })
+                rx2.then(|r| ready(r.map_err(|_| Error)))
             })
             .map(|_| ())
             .await
@@ -163,12 +157,9 @@ async fn test_acquire_release() {
     let clone = pool.clone();
     tokio::spawn(async move {
         clone
-            .run(move |conn| {
+            .run(move |_| {
                 tx3.send(()).unwrap();
-                rx4.then(|r| match r {
-                    Ok(v) => ok((v, conn)),
-                    Err(_) => err((Error, conn)),
-                })
+                rx4.then(|r| ready(r.map_err(|_| Error)))
             })
             .map(|_| ())
             .await
@@ -184,12 +175,9 @@ async fn test_acquire_release() {
     let clone = pool.clone();
     tokio::spawn(async move {
         clone
-            .run(move |conn| {
+            .run(move |_| {
                 tx5.send(()).unwrap();
-                rx6.then(|r| match r {
-                    Ok(v) => ok((v, conn)),
-                    Err(_) => err((Error, conn)),
-                })
+                rx6.then(|r| ready(r.map_err(|_| Error)))
             })
             .map(|_| ())
             .await
@@ -253,12 +241,9 @@ async fn test_drop_on_broken() {
     }
 
     let pool = Pool::builder().build(Handler).await.unwrap();
-    pool.run(move |conn| {
-        let r: Result<_, (Error, _)> = Ok(((), conn));
-        ready(r)
-    })
-    .await
-    .unwrap();
+    pool.run(move |_| async { Ok::<_, Error>(()) })
+        .await
+        .unwrap();
 
     assert!(DROPPED.load(Ordering::SeqCst));
 }
@@ -282,12 +267,7 @@ async fn test_lazy_initialization_failure() {
         .connection_timeout(Duration::from_secs(1))
         .build_unchecked(manager);
 
-    let res = pool
-        .run(move |conn| {
-            let r: Result<_, (Error, _)> = Ok(((), conn));
-            ready(r)
-        })
-        .await;
+    let res = pool.run(move |_| async { Ok::<_, Error>(()) }).await;
     assert_eq!(res.unwrap_err(), bb8::RunError::TimedOut);
 }
 
@@ -307,9 +287,10 @@ async fn test_get_timeout() {
         clone
             .run(move |conn| {
                 tx1.send(()).unwrap();
-                rx2.map(|r| match r {
-                    Ok(v) => Ok((v, conn)),
-                    Err(_) => Err((Error, conn)),
+                // The returned future must take ownership of conn
+                rx2.map_err(move |_| {
+                    println!("{:?}", conn);
+                    Error
                 })
             })
             .map(|_| ())
@@ -320,10 +301,7 @@ async fn test_get_timeout() {
     assert!(rx1.await.is_ok());
 
     let e = pool
-        .run(move |conn| {
-            let r: Result<_, (Error, _)> = Ok(((), conn));
-            ready(r)
-        })
+        .run(move |_| async { Ok::<_, Error>(()) })
         .map_err(|_| ())
         .await;
     assert!(e.is_err());
@@ -384,12 +362,9 @@ async fn test_now_invalid() {
     let clone = pool.clone();
     tokio::spawn(async move {
         clone
-            .run(move |conn| {
+            .run(move |_| {
                 tx1.send(()).unwrap();
-                rx2.map(|r| match r {
-                    Ok(v) => Ok((v, conn)),
-                    Err(_) => Err((Error, conn)),
-                })
+                rx2.map_err(|_| Error)
             })
             .map(|_| ())
             .await
@@ -400,12 +375,9 @@ async fn test_now_invalid() {
     let clone = pool.clone();
     tokio::spawn(async move {
         clone
-            .run(move |conn| {
+            .run(move |_| {
                 tx3.send(()).unwrap();
-                rx4.map(|r| match r {
-                    Ok(v) => Ok((v, conn)),
-                    Err(_) => Err((Error, conn)),
-                })
+                rx4.map_err(|_| Error)
             })
             .map(|_| ())
             .await
@@ -428,10 +400,7 @@ async fn test_now_invalid() {
 
     // Now try to get a new connection.
     let r = pool
-        .run(move |conn| {
-            let r: Result<_, (Error, _)> = Ok(((), conn));
-            ready(r)
-        })
+        .run(move |_| async { Ok::<_, Error>(()) })
         .map_err(|_| ())
         .await;
     assert!(r.is_err());
@@ -441,7 +410,7 @@ async fn test_now_invalid() {
 async fn test_max_lifetime() {
     static DROPPED: AtomicUsize = AtomicUsize::new(0);
 
-    #[derive(Default)]
+    #[derive(Debug, Default)]
     struct Connection;
 
     impl Drop for Connection {
@@ -470,9 +439,10 @@ async fn test_max_lifetime() {
                 tx1.send(()).unwrap();
                 // NB: If we sleep here we'll block this thread's event loop, and the
                 // reaper can't run.
-                rx2.map(|r| match r {
-                    Ok(v) => Ok((v, conn)),
-                    Err(_) => Err((Error, conn)),
+                // The returned future must take ownership of conn
+                rx2.map_err(move |_| {
+                    println!("{:?}", conn);
+                    Error
                 })
             })
             .map(|_| ())
@@ -518,9 +488,10 @@ async fn test_min_idle() {
             clone
                 .run(|conn| {
                     tx1.send(()).unwrap();
-                    rx2.map(|r| match r {
-                        Ok(v) => Ok((v, conn)),
-                        Err(_) => Err((Error, conn)),
+                    // The returned future must take ownership of conn
+                    rx2.map_err(move |_| {
+                        println!("{:?}", conn);
+                        Error
                     })
                 })
                 .map(|_| ())
@@ -652,9 +623,7 @@ async fn test_retry() {
 
     // is_valid() will be called between the 2 iterations
     for _ in 0..2 {
-        pool.run(|c: Connection| async { Ok::<((), Connection), (Error, Connection)>(((), c)) })
-            .await
-            .unwrap();
+        pool.run(|_| async { Ok::<_, Error>(()) }).await.unwrap();
     }
 }
 
@@ -702,9 +671,9 @@ async fn test_conn_fail_once() {
     let pool = Pool::builder().max_size(1).build(Handler).await.unwrap();
 
     for _ in 0..2 {
-        pool.run(|mut c: Connection| {
+        pool.run(|mut c| {
             c.inc();
-            async { Ok::<((), Connection), (Error, Connection)>(((), c)) }
+            async { Ok::<_, Error>(()) }
         })
         .await
         .unwrap();

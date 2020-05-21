@@ -19,32 +19,22 @@ async fn main() {
     };
 
     let _ = pool
-        .run(|connection| async {
-            if let Err(e) = connection.simple_query("BEGIN").await {
-                return Err((e, connection));
-            }
-
-            let err = match connection.prepare("SELECT 1").await {
-                Ok(select) => match connection.query_one(&select, &[]).await {
-                    Ok(row) => {
-                        println!("result: {}", row.get::<usize, i32>(0));
-                        None
-                    }
-                    Err(e) => Some(e),
-                },
-                Err(e) => Some(e),
+        .run(|connection| async move {
+            let _ = connection.simple_query("BEGIN").await?;
+            let result = match connection.prepare("SELECT 1").await {
+                Ok(select) => connection.query_one(&select, &[]).await.map(|row| {
+                    println!("result: {}", row.get::<usize, i32>(0));
+                }),
+                Err(e) => Err(e),
             };
 
-            let finalize_query = match &err {
-                None => "COMMIT",
-                Some(_) => "ROLLBACK",
+            let finalize_query = match &result {
+                Ok(()) => "COMMIT",
+                Err(_) => "ROLLBACK",
             };
 
             let _ = connection.simple_query(finalize_query).await;
-            match err {
-                Some(e) => Err((e, connection)),
-                None => Ok(((), connection)),
-            }
+            result
         })
         .await
         .map_err(|e| panic!("{:?}", e));
