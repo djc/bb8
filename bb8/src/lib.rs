@@ -136,21 +136,13 @@ impl<E> ErrorSink<E> for NopErrorSink {
 }
 
 /// Information about the state of a `Pool`.
+#[derive(Debug)]
+#[non_exhaustive]
 pub struct State {
     /// The number of connections currently being managed by the pool.
     pub connections: u32,
     /// The number of idle connections.
     pub idle_connections: u32,
-    _p: (),
-}
-
-impl fmt::Debug for State {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("State")
-            .field("connections", &self.connections)
-            .field("idle_connections", &self.idle_connections)
-            .finish()
-    }
 }
 
 #[derive(Debug)]
@@ -634,7 +626,6 @@ impl<M: ManageConnection> Pool<M> {
         State {
             connections: locked.num_conns,
             idle_connections: locked.conns.len() as u32,
-            _p: (),
         }
     }
 
