@@ -22,10 +22,10 @@ jobs:
     steps:
       - uses: actions/checkout@v1
       - uses: getong/rabbitmq-action@v1.2
-          with:
-            rabbitmq user: 'guest'
-            rabbitmq password: 'guest'
-            rabbitmq vhost: '/'
+        with:
+          rabbitmq user: 'guest'
+          rabbitmq password: 'guest'
+          rabbitmq vhost: '/'
       - run: echo "::set-env name=TEST_AMQP_URL::amqp://guest:guest@127.0.0.1:5672//"
       - uses: actions-rs/toolchain@v1
         with:
