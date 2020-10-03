@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "bb8",
+    "lapin",
     "postgres",
     "redis",
 ]

@@ -1,0 +1,19 @@
+[package]
+name = "bb8-lapin"
+version = "0.1.0"
+authors = ["Adrian Benavides <adri.benavides312@gmail.com>", "Kyle Huey <khuey@kylehuey.com>"]
+repository = "https://github.com/khuey/bb8"
+description = "r2d2-lapin, but for async tokio based connections"
+license = "MIT"
+edition = "2018"
+
+[dependencies]
+async-trait = "0.1"
+bb8 = { version = "0.4.0", path = "../bb8" }
+lapin = "1.2"
+
+[dev-dependencies]
+dotenv = "0.15"
+lazy_static = "1.4"
+tokio = { version = "0.2.22", features = ["rt-threaded", "macros", "time"] }
+tokio-amqp = "0.1.3"
