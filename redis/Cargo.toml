@@ -14,4 +14,4 @@ futures = "0.3"
 redis = { version = "0.17", default-features = false, features = ["tokio-comp"] }
 
 [dev-dependencies]
-tokio = { version = "0.2", features = ["macros"] }
+tokio = { version = "0.3", features = ["macros"] }
