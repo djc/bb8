@@ -75,6 +75,29 @@ where
             }
         }
     }
+
+    fn approvals<M: ManageConnection>(&mut self, config: &Builder<M>, num: u32) -> ApprovalIter {
+        let current = self.num_conns + self.pending_conns;
+        let allowed = if current < config.max_size {
+            config.max_size - current
+        } else {
+            0
+        };
+
+        let num = min(num, allowed);
+        self.pending_conns += num;
+        ApprovalIter { num: num as usize }
+    }
+
+    fn want_more<M: ManageConnection>(&self, config: &Builder<M>) -> u32 {
+        let available = self.conns.len() as u32 + self.pending_conns;
+        let min_idle = config.min_idle.unwrap_or(0);
+        if available < min_idle {
+            min_idle - available
+        } else {
+            0
+        }
+    }
 }
 
 pub(crate) struct PoolInner<M>
@@ -148,8 +171,8 @@ where
                 let mut locked = self.inner.internals.lock();
                 match locked.conns.pop_front() {
                     Some(conn) => {
-                        let wanted = self.inner.want_more(&mut locked);
-                        let approvals = self.inner.approvals(&mut locked, wanted);
+                        let wanted = locked.want_more(&self.inner.statics);
+                        let approvals = locked.approvals(&self.inner.statics, wanted);
                         self.clone().spawn_replenishing(approvals);
                         conn
                     }
@@ -178,7 +201,7 @@ where
         {
             let mut locked = self.inner.internals.lock();
             locked.waiters.push_back(tx);
-            let approvals = self.inner.approvals(&mut locked, 1);
+            let approvals = locked.approvals(&self.inner.statics, 1);
             self.clone().spawn_replenishing(approvals);
         };
 
@@ -194,8 +217,8 @@ where
 
     pub(crate) fn wanted(&self) -> ApprovalIter {
         let mut internals = self.inner.internals.lock();
-        let num = self.inner.want_more(&mut internals);
-        self.inner.approvals(&mut internals, num)
+        let wanted = internals.want_more(&self.inner.statics);
+        internals.approvals(&self.inner.statics, wanted)
     }
 
     /// Return connection back in to the pool
@@ -296,9 +319,9 @@ where
         internals.num_conns -= dropped as u32;
         // We might need to spin up more connections to maintain the idle limit, e.g.
         // if we hit connection lifetime limits
-        let num = self.inner.want_more(internals);
+        let num = internals.want_more(&self.inner.statics);
         self.clone()
-            .spawn_replenishing(self.inner.approvals(internals, num));
+            .spawn_replenishing(internals.approvals(&self.inner.statics, num));
     }
 }
 
@@ -331,38 +354,6 @@ where
     statics: Builder<M>,
     manager: M,
     internals: Mutex<PoolInternals<M::Connection>>,
-}
-
-impl<M> SharedPool<M>
-where
-    M: ManageConnection + Send,
-{
-    fn approvals(
-        &self,
-        locked: &mut MutexGuard<PoolInternals<M::Connection>>,
-        num: u32,
-    ) -> ApprovalIter {
-        let current = locked.num_conns + locked.pending_conns;
-        let allowed = if current < self.statics.max_size {
-            self.statics.max_size - current
-        } else {
-            0
-        };
-
-        let num = min(num, allowed);
-        locked.pending_conns += num;
-        ApprovalIter { num: num as usize }
-    }
-
-    fn want_more(&self, locked: &mut MutexGuard<PoolInternals<M::Connection>>) -> u32 {
-        let available = locked.conns.len() as u32 + locked.pending_conns;
-        let min_idle = self.statics.min_idle.unwrap_or(0);
-        if available < min_idle {
-            min_idle - available
-        } else {
-            0
-        }
-    }
 }
 
 pub(crate) struct ApprovalIter {
