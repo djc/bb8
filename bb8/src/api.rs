@@ -36,28 +36,19 @@
 #![allow(clippy::needless_doctest_main)]
 #![deny(missing_docs, missing_debug_implementations)]
 
-use std::collections::VecDeque;
 use std::error;
 use std::fmt;
 use std::future::Future;
 use std::marker::PhantomData;
-use std::mem;
 use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use futures_channel::oneshot;
 use futures_util::future::{ok, FutureExt};
 use futures_util::stream::{FuturesUnordered, StreamExt, TryStreamExt};
-use parking_lot::Mutex;
-use tokio::time::interval_at;
-use tokio::{spawn, time::timeout};
+use tokio::spawn;
 
-use crate::inner::{
-    add_connection, drop_connections, schedule_reaping, ApprovalIter, Conn, IdleConn,
-    PoolInternals, SharedPool,
-};
+use crate::inner::{add_connection, ApprovalIter, Conn, PoolInner};
 
 /// A trait which provides connection-specific functionality.
 #[async_trait]
@@ -296,7 +287,9 @@ impl<M: ManageConnection> Builder<M> {
             );
         }
 
-        Pool::new_inner(self, manager)
+        Pool {
+            inner: PoolInner::new(self, manager),
+        }
     }
 
     /// Consumes the builder, returning a new, initialized `Pool`.
@@ -325,7 +318,7 @@ pub struct Pool<M>
 where
     M: ManageConnection,
 {
-    pub(crate) inner: Arc<SharedPool<M>>,
+    pub(crate) inner: PoolInner<M>,
 }
 
 impl<M> Clone for Pool<M>
@@ -344,37 +337,11 @@ where
     M: ManageConnection,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_fmt(format_args!("Pool({:p})", self.inner))
+        f.write_fmt(format_args!("Pool({:?})", self.inner))
     }
 }
 
 impl<M: ManageConnection> Pool<M> {
-    fn new_inner(builder: Builder<M>, manager: M) -> Pool<M> {
-        let internals = PoolInternals {
-            waiters: VecDeque::new(),
-            conns: VecDeque::new(),
-            num_conns: 0,
-            pending_conns: 0,
-        };
-
-        let shared = Arc::new(SharedPool {
-            statics: builder,
-            manager,
-            internals: Mutex::new(internals),
-        });
-
-        if shared.statics.max_lifetime.is_some() || shared.statics.idle_timeout.is_some() {
-            let s = Arc::downgrade(&shared);
-            if let Some(shared) = s.upgrade() {
-                let start = Instant::now() + shared.statics.reaper_rate;
-                let interval = interval_at(start.into(), shared.statics.reaper_rate);
-                schedule_reaping(interval, s);
-            }
-        }
-
-        Pool { inner: shared }
-    }
-
     fn replenish_idle_connections(
         &self,
         approvals: ApprovalIter,
@@ -402,73 +369,13 @@ impl<M: ManageConnection> Pool<M> {
 
     /// Returns information about the current state of the pool.
     pub fn state(&self) -> State {
-        let locked = self.inner.internals.lock();
-        State {
-            connections: locked.num_conns,
-            idle_connections: locked.conns.len() as u32,
-        }
-    }
-
-    /// Return connection back in to the pool
-    fn put_back(&self, birth: Instant, mut conn: M::Connection) {
-        let inner = self.inner.clone();
-
-        // Supposed to be fast, but do it before locking anyways.
-        let broken = inner.manager.has_broken(&mut conn);
-
-        let mut locked = inner.internals.lock();
-        if broken {
-            drop_connections(&inner, &mut locked, 1);
-        } else {
-            let conn = IdleConn::make_idle(Conn { conn, birth });
-            locked.put_idle_conn(conn);
-        }
-    }
-
-    async fn get_conn<E>(&self) -> Result<Conn<M::Connection>, RunError<E>> {
-        let inner = self.inner.clone();
-
-        while let Some((conn, approvals)) = inner.get() {
-            // Spin up a new connection if necessary to retain our minimum idle count
-            if approvals.len() > 0 {
-                Pool {
-                    inner: inner.clone(),
-                }
-                .spawn_replenishing(approvals);
-            }
-
-            if inner.statics.test_on_check_out {
-                let (mut conn, birth) = (conn.conn.conn, conn.conn.birth);
-
-                match inner.manager.is_valid(&mut conn).await {
-                    Ok(()) => return Ok(Conn { conn, birth }),
-                    Err(_) => {
-                        mem::drop(conn);
-                        let mut internals = inner.internals.lock();
-                        drop_connections(&inner, &mut internals, 1);
-                    }
-                }
-                continue;
-            } else {
-                return Ok(conn.conn);
-            }
-        }
-
-        let (tx, rx) = oneshot::channel();
-        if let Some(approval) = inner.can_add_more(Some(tx)) {
-            let inner = inner.clone();
-            spawn(async move { inner.sink_error(add_connection(inner.clone(), approval).await) });
-        }
-
-        match timeout(inner.statics.connection_timeout, rx).await {
-            Ok(Ok(conn)) => Ok(conn),
-            _ => Err(RunError::TimedOut),
-        }
+        self.inner.state()
     }
 
     /// Retrieves a connection from the pool.
     pub async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
-        self.get_conn::<M::Error>()
+        self.inner
+            .get_conn::<M::Error>()
             .map(move |res| {
                 res.map(|conn| PooledConnection {
                     pool: self,
@@ -486,8 +393,7 @@ impl<M: ManageConnection> Pool<M> {
     /// This method allows reusing the manager's configuration but otherwise
     /// bypassing the pool
     pub async fn dedicated_connection(&self) -> Result<M::Connection, M::Error> {
-        let inner = self.inner.clone();
-        inner.manager.connect().await
+        self.inner.connect().await
     }
 }
 
@@ -537,6 +443,7 @@ where
 {
     fn drop(&mut self) {
         self.pool
+            .inner
             .put_back(self.checkout, self.conn.take().unwrap().conn);
     }
 }
