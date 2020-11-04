@@ -134,7 +134,10 @@ where
         spawn(async move {
             let mut stream = self.replenish_idle_connections(approvals);
             while let Some(result) = stream.next().await {
-                self.sink_error(result);
+                match result {
+                    Ok(()) => {}
+                    Err(e) => self.inner.statics.error_sink.sink(e),
+                }
             }
         });
     }
@@ -217,13 +220,6 @@ where
         State {
             connections: locked.num_conns,
             idle_connections: locked.conns.len() as u32,
-        }
-    }
-
-    pub(crate) fn sink_error(&self, result: Result<(), M::Error>) {
-        match result {
-            Ok(()) => {}
-            Err(e) => self.inner.statics.error_sink.sink(e),
         }
     }
 
