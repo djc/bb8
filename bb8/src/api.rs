@@ -55,7 +55,8 @@ use tokio::spawn;
 use tokio::time::interval_at;
 
 use crate::inner::{
-    add_connection, drop_connections, schedule_reaping, Conn, IdleConn, PoolInternals, SharedPool,
+    add_connection, drop_connections, schedule_reaping, ApprovalIter, Conn, IdleConn,
+    PoolInternals, SharedPool,
 };
 
 /// A trait which provides connection-specific functionality.
@@ -304,7 +305,7 @@ impl<M: ManageConnection> Builder<M> {
     /// minimum number of connections, or it times out.
     pub async fn build(self, manager: M) -> Result<Pool<M>, M::Error> {
         let pool = self.build_inner(manager);
-        let stream = pool.replenish_idle_connections();
+        let stream = pool.replenish_idle_connections(pool.inner.wanted());
         stream.try_fold((), |_, _| ok(())).await.map(|()| pool)
     }
 
@@ -314,7 +315,7 @@ impl<M: ManageConnection> Builder<M> {
     /// before returning.
     pub fn build_unchecked(self, manager: M) -> Pool<M> {
         let p = self.build_inner(manager);
-        p.clone().spawn_replenishing();
+        p.clone().spawn_replenishing(p.inner.wanted());
         p
     }
 }
@@ -376,17 +377,19 @@ impl<M: ManageConnection> Pool<M> {
 
     fn replenish_idle_connections(
         &self,
+        approvals: ApprovalIter,
     ) -> FuturesUnordered<impl Future<Output = Result<(), M::Error>>> {
         let stream = FuturesUnordered::new();
-        for _ in 0..self.inner.wanted() {
-            stream.push(add_connection(self.inner.clone()));
+        for approval in approvals {
+            stream.push(add_connection(self.inner.clone(), approval));
         }
         stream
     }
 
-    pub(crate) fn spawn_replenishing(self) {
+    pub(crate) fn spawn_replenishing(self, approvals: ApprovalIter) {
         spawn(async move {
-            while let Some(result) = self.replenish_idle_connections().next().await {
+            let mut stream = self.replenish_idle_connections(approvals);
+            while let Some(result) = stream.next().await {
                 self.inner.sink_error(result);
             }
         });
@@ -425,13 +428,13 @@ impl<M: ManageConnection> Pool<M> {
             Err((e, conn)) => (Err(e), conn),
         };
 
-        self.put_back(birth, conn).await;
+        self.put_back(birth, conn);
 
         r.map_err(RunError::User)
     }
 
     /// Return connection back in to the pool
-    async fn put_back(&self, birth: Instant, mut conn: M::Connection) {
+    fn put_back(&self, birth: Instant, mut conn: M::Connection) {
         let inner = self.inner.clone();
 
         // Supposed to be fast, but do it before locking anyways.
@@ -450,14 +453,13 @@ impl<M: ManageConnection> Pool<M> {
         let inner = self.inner.clone();
 
         loop {
-            let mut internals = inner.internals.lock();
-            if let Some(conn) = internals.conns.pop_front() {
+            if let Some((conn, approvals)) = inner.get() {
                 // Spin up a new connection if necessary to retain our minimum idle count
-                if internals.num_conns + internals.pending_conns < inner.statics.max_size {
+                if approvals.len() > 0 {
                     Pool {
                         inner: inner.clone(),
                     }
-                    .spawn_replenishing();
+                    .spawn_replenishing(approvals);
                 }
 
                 if inner.statics.test_on_check_out {
@@ -467,6 +469,7 @@ impl<M: ManageConnection> Pool<M> {
                         Ok(()) => return Ok(Conn { conn, birth }),
                         Err(_) => {
                             mem::drop(conn);
+                            let mut internals = inner.internals.lock();
                             drop_connections(&inner, &mut internals, 1);
                         }
                     }
@@ -480,14 +483,9 @@ impl<M: ManageConnection> Pool<M> {
         }
 
         let (tx, rx) = oneshot::channel();
-        let current_and_pending_conns = {
-            let mut locked = inner.internals.lock();
-            locked.waiters.push_back(tx);
-            locked.num_conns + locked.pending_conns
-        };
-
-        if current_and_pending_conns < inner.statics.max_size {
-            spawn(async move { inner.sink_error(add_connection(inner.clone()).await) });
+        if let Some(approval) = inner.can_add_more(Some(tx)) {
+            let inner = inner.clone();
+            spawn(async move { inner.sink_error(add_connection(inner.clone(), approval).await) });
         }
 
         match inner.or_timeout(rx).await {
@@ -566,10 +564,7 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        futures::executor::block_on(async {
-            self.pool
-                .put_back(self.checkout, self.conn.take().unwrap().conn)
-                .await;
-        })
+        self.pool
+            .put_back(self.checkout, self.conn.take().unwrap().conn);
     }
 }

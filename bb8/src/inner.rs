@@ -1,6 +1,5 @@
 use std::cmp::{max, min};
 use std::collections::VecDeque;
-use std::mem;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -91,15 +90,62 @@ impl<M> SharedPool<M>
 where
     M: ManageConnection,
 {
-    pub(crate) fn wanted(&self) -> u32 {
-        let desired = self.statics.min_idle.unwrap_or(0);
-        let internals = self.internals.lock();
-        let idle_or_pending = internals.conns.len() as u32 + internals.pending_conns;
-        if idle_or_pending < desired {
-            desired - idle_or_pending
+    pub(crate) fn get(&self) -> Option<(IdleConn<M::Connection>, ApprovalIter)> {
+        let mut locked = self.internals.lock();
+        locked.conns.pop_front().map(|conn| {
+            let wanted = self.want_more(&mut locked);
+            (conn, self.approvals(&mut locked, wanted))
+        })
+    }
+
+    pub(crate) fn can_add_more(
+        &self,
+        waiter: Option<oneshot::Sender<Conn<M::Connection>>>,
+    ) -> Option<Approval> {
+        let mut locked = self.internals.lock();
+        if let Some(waiter) = waiter {
+            locked.waiters.push_back(waiter);
+        }
+
+        if locked.num_conns + locked.pending_conns < self.statics.max_size {
+            locked.pending_conns += 1;
+            Some(Approval { _priv: () })
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn wanted(&self) -> ApprovalIter {
+        let mut internals = self.internals.lock();
+        let num = self.want_more(&mut internals);
+        self.approvals(&mut internals, num)
+    }
+
+    fn want_more(&self, locked: &mut MutexGuard<PoolInternals<M::Connection>>) -> u32 {
+        let available = locked.conns.len() as u32 + locked.pending_conns;
+        let min_idle = self.statics.min_idle.unwrap_or(0);
+        if available < min_idle {
+            min_idle - available
         } else {
             0
         }
+    }
+
+    fn approvals(
+        &self,
+        locked: &mut MutexGuard<PoolInternals<M::Connection>>,
+        num: u32,
+    ) -> ApprovalIter {
+        let current = locked.num_conns + locked.pending_conns;
+        let allowed = if current < self.statics.max_size {
+            self.statics.max_size - current
+        } else {
+            0
+        };
+
+        let num = min(num, allowed);
+        locked.pending_conns += num;
+        ApprovalIter { num: num as usize }
     }
 
     pub(crate) fn sink_error(&self, result: Result<(), M::Error>) {
@@ -126,18 +172,10 @@ where
 }
 
 // Outside of Pool to avoid borrow splitting issues on self
-pub(crate) async fn add_connection<M>(pool: Arc<SharedPool<M>>) -> Result<(), M::Error>
+pub(crate) async fn add_connection<M>(pool: Arc<SharedPool<M>>, _: Approval) -> Result<(), M::Error>
 where
     M: ManageConnection,
 {
-    let mut internals = pool.internals.lock();
-    if internals.num_conns + internals.pending_conns >= pool.statics.max_size {
-        return Ok(());
-    }
-
-    internals.pending_conns += 1;
-    mem::drop(internals);
-
     let new_shared = Arc::downgrade(&pool);
     let shared = match new_shared.upgrade() {
         None => return Ok(()),
@@ -176,6 +214,34 @@ where
     }
 }
 
+pub(crate) struct ApprovalIter {
+    num: usize,
+}
+
+impl Iterator for ApprovalIter {
+    type Item = Approval;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.num {
+            0 => None,
+            _ => {
+                self.num -= 1;
+                Some(Approval { _priv: () })
+            }
+        }
+    }
+}
+
+impl ExactSizeIterator for ApprovalIter {
+    fn len(&self) -> usize {
+        self.num
+    }
+}
+
+pub(crate) struct Approval {
+    _priv: (),
+}
+
 // Drop connections
 // NB: This is called with the pool lock held.
 pub(crate) fn drop_connections<'a, M>(
@@ -188,11 +254,12 @@ pub(crate) fn drop_connections<'a, M>(
     internals.num_conns -= dropped as u32;
     // We might need to spin up more connections to maintain the idle limit, e.g.
     // if we hit connection lifetime limits
-    if internals.num_conns + internals.pending_conns < pool.statics.max_size {
+    let num = pool.want_more(internals);
+    if num > 0 {
         Pool {
             inner: pool.clone(),
         }
-        .spawn_replenishing();
+        .spawn_replenishing(pool.approvals(internals, num));
     }
 }
 
