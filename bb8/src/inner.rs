@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 
 use futures::channel::oneshot;
 use futures::prelude::*;
+use parking_lot::{Mutex, MutexGuard};
 use tokio::spawn;
-use tokio::sync::{Mutex, MutexGuard};
 use tokio::time::{delay_for, timeout, Interval};
 
 use crate::api::{Builder, ManageConnection, Pool};
@@ -91,9 +91,9 @@ impl<M> SharedPool<M>
 where
     M: ManageConnection,
 {
-    pub(crate) async fn wanted(&self) -> u32 {
+    pub(crate) fn wanted(&self) -> u32 {
         let desired = self.statics.min_idle.unwrap_or(0);
-        let internals = self.internals.lock().await;
+        let internals = self.internals.lock();
         let idle_or_pending = internals.conns.len() as u32 + internals.pending_conns;
         if idle_or_pending < desired {
             desired - idle_or_pending
@@ -130,7 +130,7 @@ pub(crate) async fn add_connection<M>(pool: Arc<SharedPool<M>>) -> Result<(), M:
 where
     M: ManageConnection,
 {
-    let mut internals = pool.internals.lock().await;
+    let mut internals = pool.internals.lock();
     if internals.num_conns + internals.pending_conns >= pool.statics.max_size {
         return Ok(());
     }
@@ -155,7 +155,7 @@ where
                     idle_start: now,
                 };
 
-                let mut locked = shared.internals.lock().await;
+                let mut locked = shared.internals.lock();
                 locked.pending_conns -= 1;
                 locked.num_conns += 1;
                 locked.put_idle_conn(conn);
@@ -163,7 +163,7 @@ where
             }
             Err(e) => {
                 if Instant::now() - start > pool.statics.connection_timeout {
-                    let mut locked = shared.internals.lock().await;
+                    let mut locked = shared.internals.lock();
                     locked.pending_conns -= 1;
                     return Err(e);
                 } else {
@@ -204,7 +204,7 @@ where
         loop {
             let _ = interval.tick().await;
             if let Some(pool) = weak_shared.upgrade() {
-                let mut internals = pool.internals.lock().await;
+                let mut internals = pool.internals.lock();
                 let now = Instant::now();
                 let before = internals.conns.len();
 

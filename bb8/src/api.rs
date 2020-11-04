@@ -50,8 +50,8 @@ use futures::channel::oneshot;
 use futures::future::ok;
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
+use parking_lot::Mutex;
 use tokio::spawn;
-use tokio::sync::Mutex;
 use tokio::time::interval_at;
 
 use crate::inner::{
@@ -304,7 +304,7 @@ impl<M: ManageConnection> Builder<M> {
     /// minimum number of connections, or it times out.
     pub async fn build(self, manager: M) -> Result<Pool<M>, M::Error> {
         let pool = self.build_inner(manager);
-        let stream = pool.replenish_idle_connections().await;
+        let stream = pool.replenish_idle_connections();
         stream.try_fold((), |_, _| ok(())).await.map(|()| pool)
     }
 
@@ -374,11 +374,11 @@ impl<M: ManageConnection> Pool<M> {
         Pool { inner: shared }
     }
 
-    async fn replenish_idle_connections(
+    fn replenish_idle_connections(
         &self,
     ) -> FuturesUnordered<impl Future<Output = Result<(), M::Error>>> {
         let stream = FuturesUnordered::new();
-        for _ in 0..self.inner.wanted().await {
+        for _ in 0..self.inner.wanted() {
             stream.push(add_connection(self.inner.clone()));
         }
         stream
@@ -386,7 +386,7 @@ impl<M: ManageConnection> Pool<M> {
 
     pub(crate) fn spawn_replenishing(self) {
         spawn(async move {
-            while let Some(result) = self.replenish_idle_connections().await.next().await {
+            while let Some(result) = self.replenish_idle_connections().next().await {
                 self.inner.sink_error(result);
             }
         });
@@ -399,12 +399,7 @@ impl<M: ManageConnection> Pool<M> {
 
     /// Returns information about the current state of the pool.
     pub fn state(&self) -> State {
-        let locked = loop {
-            if let Ok(internals) = self.inner.internals.try_lock() {
-                break internals;
-            }
-        };
-
+        let locked = self.inner.internals.lock();
         State {
             connections: locked.num_conns,
             idle_connections: locked.conns.len() as u32,
@@ -442,7 +437,7 @@ impl<M: ManageConnection> Pool<M> {
         // Supposed to be fast, but do it before locking anyways.
         let broken = inner.manager.has_broken(&mut conn);
 
-        let mut locked = inner.internals.lock().await;
+        let mut locked = inner.internals.lock();
         if broken {
             drop_connections(&inner, &mut locked, 1);
         } else {
@@ -455,7 +450,7 @@ impl<M: ManageConnection> Pool<M> {
         let inner = self.inner.clone();
 
         loop {
-            let mut internals = inner.internals.lock().await;
+            let mut internals = inner.internals.lock();
             if let Some(conn) = internals.conns.pop_front() {
                 // Spin up a new connection if necessary to retain our minimum idle count
                 if internals.num_conns + internals.pending_conns < inner.statics.max_size {
@@ -485,13 +480,14 @@ impl<M: ManageConnection> Pool<M> {
         }
 
         let (tx, rx) = oneshot::channel();
-        {
-            let mut locked = inner.internals.lock().await;
+        let current_and_pending_conns = {
+            let mut locked = inner.internals.lock();
             locked.waiters.push_back(tx);
-            if locked.num_conns + locked.pending_conns < inner.statics.max_size {
-                let inner = inner.clone();
-                spawn(async move { inner.sink_error(add_connection(inner.clone()).await) });
-            }
+            locked.num_conns + locked.pending_conns
+        };
+
+        if current_and_pending_conns < inner.statics.max_size {
+            spawn(async move { inner.sink_error(add_connection(inner.clone()).await) });
         }
 
         match inner.or_timeout(rx).await {
