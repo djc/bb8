@@ -39,6 +39,7 @@
 use std::collections::VecDeque;
 use std::error;
 use std::fmt;
+use std::future::Future;
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Deref, DerefMut};
@@ -47,9 +48,8 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use futures::channel::oneshot;
-use futures::future::ok;
-use futures::prelude::*;
-use futures::stream::FuturesUnordered;
+use futures::future::{ok, FutureExt};
+use futures::stream::{FuturesUnordered, StreamExt, TryStreamExt};
 use parking_lot::Mutex;
 use tokio::time::interval_at;
 use tokio::{spawn, time::timeout};

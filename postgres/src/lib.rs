@@ -5,7 +5,6 @@ pub use bb8;
 pub use tokio_postgres;
 
 use async_trait::async_trait;
-use futures::prelude::*;
 use tokio_postgres::config::Config;
 use tokio_postgres::tls::{MakeTlsConnect, TlsConnect};
 use tokio_postgres::{Client, Error, Socket};
@@ -58,16 +57,11 @@ where
     type Error = Error;
 
     async fn connect(&self) -> Result<Self::Connection, Self::Error> {
-        self.config
-            .connect(self.tls.clone())
-            .await
-            .map(|(client, connection)| {
-                // The connection object performs the actual communication with the database,
-                // so spawn it off to run on its own.
-                tokio::spawn(connection.map(|_| ()));
-
-                client
-            })
+        let (client, connection) = self.config.connect(self.tls.clone()).await?;
+        // The connection object performs the actual communication with the database,
+        // so spawn it off to run on its own.
+        tokio::spawn(async move { connection.await.map(|_| ()) });
+        Ok(client)
     }
 
     async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {

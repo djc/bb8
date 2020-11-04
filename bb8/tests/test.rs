@@ -1,5 +1,6 @@
 use bb8::*;
 
+use std::future::Future;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -11,9 +12,8 @@ use std::{error, fmt, mem};
 
 use async_trait::async_trait;
 use futures::channel::oneshot;
-use futures::future::{err, lazy, ok, pending, ready, try_join_all};
-use futures::prelude::*;
-use futures::stream::FuturesUnordered;
+use futures::future::{err, lazy, ok, pending, ready, try_join_all, FutureExt, TryFutureExt};
+use futures::stream::{FuturesUnordered, TryStreamExt};
 use tokio::time::timeout;
 
 #[derive(Debug, PartialEq, Eq)]
