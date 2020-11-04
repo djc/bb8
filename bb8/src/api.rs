@@ -51,8 +51,8 @@ use futures::future::ok;
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use parking_lot::Mutex;
-use tokio::spawn;
 use tokio::time::interval_at;
+use tokio::{spawn, time::timeout};
 
 use crate::inner::{
     add_connection, drop_connections, schedule_reaping, ApprovalIter, Conn, IdleConn,
@@ -488,8 +488,8 @@ impl<M: ManageConnection> Pool<M> {
             spawn(async move { inner.sink_error(add_connection(inner.clone(), approval).await) });
         }
 
-        match inner.or_timeout(rx).await {
-            Ok(Some(conn)) => Ok(conn),
+        match timeout(inner.statics.connection_timeout, rx).await {
+            Ok(Ok(conn)) => Ok(conn),
             _ => Err(RunError::TimedOut),
         }
     }

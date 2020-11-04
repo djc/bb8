@@ -4,10 +4,9 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use futures::channel::oneshot;
-use futures::prelude::*;
 use parking_lot::{Mutex, MutexGuard};
 use tokio::spawn;
-use tokio::time::{delay_for, timeout, Interval};
+use tokio::time::{delay_for, Interval};
 
 use crate::api::{Builder, ManageConnection, Pool};
 
@@ -153,21 +152,6 @@ where
             Ok(()) => {}
             Err(e) => self.statics.error_sink.sink(e),
         }
-    }
-
-    pub(crate) async fn or_timeout<'a, E, F, T>(&self, f: F) -> Result<Option<T>, E>
-    where
-        F: Future<Output = Result<T, E>> + Send + 'a,
-        T: Send + 'a,
-        E: Send + ::std::fmt::Debug + 'a,
-    {
-        timeout(self.statics.connection_timeout, f)
-            .map(|r| match r {
-                Ok(Ok(item)) => Ok(Some(item)),
-                Ok(Err(e)) => Err(e),
-                Err(_) => Ok(None),
-            })
-            .await
     }
 }
 
