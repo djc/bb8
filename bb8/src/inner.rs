@@ -61,7 +61,12 @@ impl<C> PoolInternals<C>
 where
     C: Send,
 {
-    fn put(&mut self, mut conn: IdleConn<C>) {
+    fn put(&mut self, mut conn: IdleConn<C>, approval: Option<Approval>) {
+        if approval.is_some() {
+            self.pending_conns -= 1;
+            self.num_conns += 1;
+        }
+
         loop {
             if let Some(waiter) = self.waiters.pop_front() {
                 // This connection is no longer idle, send it back out.
@@ -76,6 +81,14 @@ where
                 break;
             }
         }
+    }
+
+    fn connect_failed(&mut self, _: Approval) {
+        self.pending_conns -= 1;
+    }
+
+    fn dropped(&mut self, num: u32) {
+        self.num_conns -= num;
     }
 
     fn wanted<M: ManageConnection>(&mut self, config: &Builder<M>) -> ApprovalIter {
@@ -104,6 +117,17 @@ where
     }
 }
 
+impl<C> Default for PoolInternals<C> where C: Send {
+    fn default() -> Self {
+        Self {
+            waiters: VecDeque::new(),
+            conns: VecDeque::new(),
+            num_conns: 0,
+            pending_conns: 0,
+        }
+    }
+}
+
 pub(crate) struct PoolInner<M>
 where
     M: ManageConnection + Send,
@@ -116,17 +140,10 @@ where
     M: ManageConnection + Send,
 {
     pub(crate) fn new(builder: Builder<M>, manager: M) -> Self {
-        let internals = PoolInternals {
-            waiters: VecDeque::new(),
-            conns: VecDeque::new(),
-            num_conns: 0,
-            pending_conns: 0,
-        };
-
         let inner = Arc::new(SharedPool {
             statics: builder,
             manager,
-            internals: Mutex::new(internals),
+            internals: Mutex::new(PoolInternals::default()),
         });
 
         if inner.statics.max_lifetime.is_some() || inner.statics.idle_timeout.is_some() {
@@ -240,7 +257,7 @@ where
         if broken {
             self.drop_connections(&mut locked, 1);
         } else {
-            locked.put(conn.into());
+            locked.put(conn.into(), None);
         }
     }
 
@@ -274,7 +291,7 @@ where
     }
 
     // Outside of Pool to avoid borrow splitting issues on self
-    async fn add_connection(&self, _: Approval) -> Result<(), M::Error>
+    async fn add_connection(&self, approval: Approval) -> Result<(), M::Error>
     where
         M: ManageConnection,
     {
@@ -295,16 +312,13 @@ where
                         idle_start: now,
                     };
 
-                    let mut locked = shared.internals.lock();
-                    locked.pending_conns -= 1;
-                    locked.num_conns += 1;
-                    locked.put(conn);
+                    shared.internals.lock().put(conn, Some(approval));
                     return Ok(());
                 }
                 Err(e) => {
                     if Instant::now() - start > self.inner.statics.connection_timeout {
                         let mut locked = shared.internals.lock();
-                        locked.pending_conns -= 1;
+                        locked.connect_failed(approval);
                         return Err(e);
                     } else {
                         delay = max(Duration::from_millis(200), delay);
@@ -325,7 +339,7 @@ where
     ) where
         M: ManageConnection,
     {
-        internals.num_conns -= dropped as u32;
+        internals.dropped(dropped as u32);
         // We might need to spin up more connections to maintain the idle limit, e.g.
         // if we hit connection lifetime limits
         self.spawn_replenishing_locked(internals);
