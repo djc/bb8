@@ -33,21 +33,20 @@ async fn main() {
 
                         let result = pool
                             .run(move |connection| async {
-                                match connection.prepare("SELECT 1").await {
-                                    Ok(select) => match connection.query_one(&select, &[]).await {
-                                        Ok(row) => {
-                                            let v = row.get::<usize, i32>(0);
-                                            println!("Sending success response");
-                                            let rsp = Response::new(Body::from(format!(
-                                                "Got results {:?}",
-                                                v
-                                            )));
-                                            Ok((rsp, connection))
-                                        }
-                                        Err(e) => Err((e, connection)),
-                                    },
-                                    Err(e) => Err((e, connection)),
-                                }
+                                let select = match connection.prepare("SELECT 1").await {
+                                    Ok(select) => select,
+                                    Err(e) => return Err((e, connection)),
+                                };
+
+                                let row = match connection.query_one(&select, &[]).await {
+                                    Ok(row) => row,
+                                    Err(e) => return Err((e, connection)),
+                                };
+
+                                let v = row.get::<usize, i32>(0);
+                                println!("Sending success response");
+                                let rsp = Response::new(Body::from(format!("Got results {:?}", v)));
+                                Ok((rsp, connection))
                             })
                             .await;
 
