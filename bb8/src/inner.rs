@@ -10,7 +10,7 @@ use tokio::spawn;
 use tokio::sync::{Mutex, MutexGuard};
 use tokio::time::{delay_for, timeout, Interval};
 
-use super::{Builder, ManageConnection, Pool};
+use crate::api::{Builder, ManageConnection, Pool};
 
 #[derive(Debug)]
 pub(crate) struct Conn<C>
