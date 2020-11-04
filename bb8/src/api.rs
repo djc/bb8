@@ -304,7 +304,8 @@ impl<M: ManageConnection> Builder<M> {
     /// minimum number of connections, or it times out.
     pub async fn build(self, manager: M) -> Result<Pool<M>, M::Error> {
         let pool = self.build_inner(manager);
-        pool.replenish_idle_connections().await.map(|()| pool)
+        let stream = pool.replenish_idle_connections().await;
+        stream.try_fold((), |_, _| ok(())).await.map(|()| pool)
     }
 
     /// Consumes the builder, returning a new, initialized `Pool`.
@@ -373,18 +374,21 @@ impl<M: ManageConnection> Pool<M> {
         Pool { inner: shared }
     }
 
-    async fn replenish_idle_connections(&self) -> Result<(), M::Error> {
+    async fn replenish_idle_connections(
+        &self,
+    ) -> FuturesUnordered<impl Future<Output = Result<(), M::Error>>> {
         let stream = FuturesUnordered::new();
         for _ in 0..self.inner.wanted().await {
             stream.push(add_connection(self.inner.clone()));
         }
-        stream.try_fold((), |_, _| ok(())).await
+        stream
     }
 
     pub(crate) fn spawn_replenishing(self) {
         spawn(async move {
-            self.inner
-                .sink_error(self.replenish_idle_connections().await)
+            while let Some(result) = self.replenish_idle_connections().await.next().await {
+                self.inner.sink_error(result);
+            }
         });
     }
 
