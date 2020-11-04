@@ -409,30 +409,6 @@ impl<M: ManageConnection> Pool<M> {
         }
     }
 
-    /// Run a closure with a `Connection`.
-    pub async fn run<'a, T, E, U, F>(&self, f: F) -> Result<T, RunError<E>>
-    where
-        F: FnOnce(M::Connection) -> U + Send + 'a,
-        U: Future<Output = Result<(T, M::Connection), (E, M::Connection)>> + Send + 'a,
-        E: From<M::Error> + Send + 'a,
-        T: Send + 'a,
-    {
-        let conn = match self.get_conn::<E>().await {
-            Ok(conn) => conn,
-            Err(e) => return Err(e),
-        };
-
-        let birth = conn.birth;
-        let (r, conn): (Result<_, E>, _) = match f(conn.conn).await {
-            Ok((t, conn)) => (Ok(t), conn),
-            Err((e, conn)) => (Err(e), conn),
-        };
-
-        self.put_back(birth, conn);
-
-        r.map_err(RunError::User)
-    }
-
     /// Return connection back in to the pool
     fn put_back(&self, birth: Instant, mut conn: M::Connection) {
         let inner = self.inner.clone();
