@@ -452,33 +452,29 @@ impl<M: ManageConnection> Pool<M> {
     async fn get_conn<E>(&self) -> Result<Conn<M::Connection>, RunError<E>> {
         let inner = self.inner.clone();
 
-        loop {
-            if let Some((conn, approvals)) = inner.get() {
-                // Spin up a new connection if necessary to retain our minimum idle count
-                if approvals.len() > 0 {
-                    Pool {
-                        inner: inner.clone(),
-                    }
-                    .spawn_replenishing(approvals);
+        while let Some((conn, approvals)) = inner.get() {
+            // Spin up a new connection if necessary to retain our minimum idle count
+            if approvals.len() > 0 {
+                Pool {
+                    inner: inner.clone(),
                 }
+                .spawn_replenishing(approvals);
+            }
 
-                if inner.statics.test_on_check_out {
-                    let (mut conn, birth) = (conn.conn.conn, conn.conn.birth);
+            if inner.statics.test_on_check_out {
+                let (mut conn, birth) = (conn.conn.conn, conn.conn.birth);
 
-                    match inner.manager.is_valid(&mut conn).await {
-                        Ok(()) => return Ok(Conn { conn, birth }),
-                        Err(_) => {
-                            mem::drop(conn);
-                            let mut internals = inner.internals.lock();
-                            drop_connections(&inner, &mut internals, 1);
-                        }
+                match inner.manager.is_valid(&mut conn).await {
+                    Ok(()) => return Ok(Conn { conn, birth }),
+                    Err(_) => {
+                        mem::drop(conn);
+                        let mut internals = inner.internals.lock();
+                        drop_connections(&inner, &mut internals, 1);
                     }
-                    continue;
-                } else {
-                    return Ok(conn.conn);
                 }
+                continue;
             } else {
-                break;
+                return Ok(conn.conn);
             }
         }
 
