@@ -165,7 +165,7 @@ where
                     Err(_) => {
                         mem::drop(conn);
                         let mut internals = self.inner.internals.lock();
-                        drop_connections(&self.inner, &mut internals, 1);
+                        self.drop_connections(&mut internals, 1);
                     }
                 }
                 continue;
@@ -200,14 +200,12 @@ where
 
     /// Return connection back in to the pool
     pub(crate) fn put_back(&self, birth: Instant, mut conn: M::Connection) {
-        let inner = self.inner.clone();
-
         // Supposed to be fast, but do it before locking anyways.
-        let broken = inner.manager.has_broken(&mut conn);
+        let broken = self.inner.manager.has_broken(&mut conn);
 
-        let mut locked = inner.internals.lock();
+        let mut locked = self.inner.internals.lock();
         if broken {
-            drop_connections(&inner, &mut locked, 1);
+            self.drop_connections(&mut locked, 1);
         } else {
             let conn = IdleConn::make_idle(Conn { conn, birth });
             locked.put_idle_conn(conn);
@@ -264,6 +262,23 @@ where
                 }
             }
         }
+    }
+
+    // Drop connections
+    // NB: This is called with the pool lock held.
+    fn drop_connections(
+        &self,
+        internals: &mut MutexGuard<PoolInternals<M::Connection>>,
+        dropped: usize,
+    ) where
+        M: ManageConnection,
+    {
+        internals.num_conns -= dropped as u32;
+        // We might need to spin up more connections to maintain the idle limit, e.g.
+        // if we hit connection lifetime limits
+        let num = self.inner.want_more(internals);
+        self.clone()
+            .spawn_replenishing(self.inner.approvals(internals, num));
     }
 }
 
@@ -358,27 +373,6 @@ pub(crate) struct Approval {
     _priv: (),
 }
 
-// Drop connections
-// NB: This is called with the pool lock held.
-fn drop_connections<'a, M>(
-    pool: &Arc<SharedPool<M>>,
-    internals: &mut MutexGuard<'a, PoolInternals<M::Connection>>,
-    dropped: usize,
-) where
-    M: ManageConnection,
-{
-    internals.num_conns -= dropped as u32;
-    // We might need to spin up more connections to maintain the idle limit, e.g.
-    // if we hit connection lifetime limits
-    let num = pool.want_more(internals);
-    if num > 0 {
-        PoolInner {
-            inner: pool.clone(),
-        }
-        .spawn_replenishing(pool.approvals(internals, num));
-    }
-}
-
 fn schedule_reaping<M>(mut interval: Interval, weak_shared: Weak<SharedPool<M>>)
 where
     M: ManageConnection,
@@ -386,24 +380,25 @@ where
     spawn(async move {
         loop {
             let _ = interval.tick().await;
-            if let Some(pool) = weak_shared.upgrade() {
-                let mut internals = pool.internals.lock();
+            if let Some(inner) = weak_shared.upgrade() {
+                let pool = PoolInner { inner };
+                let mut internals = pool.inner.internals.lock();
                 let now = Instant::now();
                 let before = internals.conns.len();
 
                 internals.conns.retain(|conn| {
                     let mut keep = true;
-                    if let Some(timeout) = pool.statics.idle_timeout {
+                    if let Some(timeout) = pool.inner.statics.idle_timeout {
                         keep &= now - conn.idle_start < timeout;
                     }
-                    if let Some(lifetime) = pool.statics.max_lifetime {
+                    if let Some(lifetime) = pool.inner.statics.max_lifetime {
                         keep &= now - conn.conn.birth < lifetime;
                     }
                     keep
                 });
 
                 let dropped = before - internals.conns.len();
-                drop_connections(&pool, &mut internals, dropped);
+                pool.drop_connections(&mut internals, dropped);
             } else {
                 break;
             }
