@@ -38,17 +38,15 @@
 
 use std::error;
 use std::fmt;
-use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use futures_util::future::{ok, FutureExt};
-use futures_util::stream::{FuturesUnordered, StreamExt, TryStreamExt};
-use tokio::spawn;
+use futures_util::stream::TryStreamExt;
 
-use crate::inner::{add_connection, ApprovalIter, Conn, PoolInner};
+use crate::inner::{Conn, PoolInner};
 
 /// A trait which provides connection-specific functionality.
 #[async_trait]
@@ -298,7 +296,7 @@ impl<M: ManageConnection> Builder<M> {
     /// minimum number of connections, or it times out.
     pub async fn build(self, manager: M) -> Result<Pool<M>, M::Error> {
         let pool = self.build_inner(manager);
-        let stream = pool.replenish_idle_connections(pool.inner.wanted());
+        let stream = pool.inner.replenish_idle_connections(pool.inner.wanted());
         stream.try_fold((), |_, _| ok(())).await.map(|()| pool)
     }
 
@@ -308,7 +306,7 @@ impl<M: ManageConnection> Builder<M> {
     /// before returning.
     pub fn build_unchecked(self, manager: M) -> Pool<M> {
         let p = self.build_inner(manager);
-        p.clone().spawn_replenishing(p.inner.wanted());
+        p.inner.clone().spawn_replenishing(p.inner.wanted());
         p
     }
 }
@@ -342,26 +340,6 @@ where
 }
 
 impl<M: ManageConnection> Pool<M> {
-    fn replenish_idle_connections(
-        &self,
-        approvals: ApprovalIter,
-    ) -> FuturesUnordered<impl Future<Output = Result<(), M::Error>>> {
-        let stream = FuturesUnordered::new();
-        for approval in approvals {
-            stream.push(add_connection(self.inner.clone(), approval));
-        }
-        stream
-    }
-
-    pub(crate) fn spawn_replenishing(self, approvals: ApprovalIter) {
-        spawn(async move {
-            let mut stream = self.replenish_idle_connections(approvals);
-            while let Some(result) = stream.next().await {
-                self.inner.sink_error(result);
-            }
-        });
-    }
-
     /// Returns a `Builder` instance to configure a new pool.
     pub fn builder() -> Builder<M> {
         Builder::new()

@@ -1,15 +1,17 @@
 use std::cmp::{max, min};
 use std::collections::VecDeque;
+use std::future::Future;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use std::{fmt, mem};
 
 use futures_channel::oneshot;
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use parking_lot::{Mutex, MutexGuard};
 use tokio::spawn;
 use tokio::time::{delay_for, interval_at, timeout, Interval};
 
-use crate::api::{Builder, ManageConnection, Pool, RunError, State};
+use crate::api::{Builder, ManageConnection, RunError, State};
 
 #[derive(Debug)]
 pub(crate) struct Conn<C>
@@ -112,14 +114,31 @@ where
         Self { inner }
     }
 
+    pub(crate) fn replenish_idle_connections(
+        &self,
+        approvals: ApprovalIter,
+    ) -> FuturesUnordered<impl Future<Output = Result<(), M::Error>>> {
+        let stream = FuturesUnordered::new();
+        for approval in approvals {
+            stream.push(add_connection(self.clone(), approval));
+        }
+        stream
+    }
+
+    pub(crate) fn spawn_replenishing(self, approvals: ApprovalIter) {
+        spawn(async move {
+            let mut stream = self.replenish_idle_connections(approvals);
+            while let Some(result) = stream.next().await {
+                self.sink_error(result);
+            }
+        });
+    }
+
     pub(crate) async fn get_conn<E>(&self) -> Result<Conn<M::Connection>, RunError<E>> {
         while let Some((conn, approvals)) = self.get() {
             // Spin up a new connection if necessary to retain our minimum idle count
             if approvals.len() > 0 {
-                Pool {
-                    inner: self.clone(),
-                }
-                .spawn_replenishing(approvals);
+                self.clone().spawn_replenishing(approvals);
             }
 
             if self.inner.statics.test_on_check_out {
@@ -283,7 +302,7 @@ where
 }
 
 // Outside of Pool to avoid borrow splitting issues on self
-pub(crate) async fn add_connection<M>(pool: PoolInner<M>, _: Approval) -> Result<(), M::Error>
+async fn add_connection<M>(pool: PoolInner<M>, _: Approval) -> Result<(), M::Error>
 where
     M: ManageConnection,
 {
@@ -367,10 +386,8 @@ fn drop_connections<'a, M>(
     // if we hit connection lifetime limits
     let num = pool.want_more(internals);
     if num > 0 {
-        Pool {
-            inner: PoolInner {
-                inner: pool.clone(),
-            },
+        PoolInner {
+            inner: pool.clone(),
         }
         .spawn_replenishing(pool.approvals(internals, num));
     }
