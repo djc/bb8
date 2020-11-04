@@ -306,7 +306,7 @@ impl<M: ManageConnection> Builder<M> {
     /// before returning.
     pub fn build_unchecked(self, manager: M) -> Pool<M> {
         let p = self.build_inner(manager);
-        p.inner.clone().spawn_replenishing(p.inner.wanted());
+        p.inner.spawn_replenishing();
         p
     }
 }

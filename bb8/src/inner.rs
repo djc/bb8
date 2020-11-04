@@ -76,6 +76,18 @@ where
         }
     }
 
+    fn wanted<M: ManageConnection>(&mut self, config: &Builder<M>) -> ApprovalIter {
+        let available = self.conns.len() as u32 + self.pending_conns;
+        let min_idle = config.min_idle.unwrap_or(0);
+        let wanted = if available < min_idle {
+            min_idle - available
+        } else {
+            0
+        };
+
+        self.approvals(&config, wanted)
+    }
+
     fn approvals<M: ManageConnection>(&mut self, config: &Builder<M>, num: u32) -> ApprovalIter {
         let current = self.num_conns + self.pending_conns;
         let allowed = if current < config.max_size {
@@ -87,16 +99,6 @@ where
         let num = min(num, allowed);
         self.pending_conns += num;
         ApprovalIter { num: num as usize }
-    }
-
-    fn want_more<M: ManageConnection>(&self, config: &Builder<M>) -> u32 {
-        let available = self.conns.len() as u32 + self.pending_conns;
-        let min_idle = config.min_idle.unwrap_or(0);
-        if available < min_idle {
-            min_idle - available
-        } else {
-            0
-        }
     }
 }
 
@@ -137,6 +139,36 @@ where
         Self { inner }
     }
 
+    pub(crate) fn spawn_replenishing(&self) {
+        let mut locked = self.inner.internals.lock();
+        self.spawn_replenishing_approvals(locked.wanted(&self.inner.statics));
+    }
+
+    pub(crate) fn wanted(&self) -> ApprovalIter {
+        self.inner.internals.lock().wanted(&self.inner.statics)
+    }
+
+    fn spawn_replenishing_locked(&self, locked: &mut MutexGuard<PoolInternals<M::Connection>>) {
+        self.spawn_replenishing_approvals(locked.wanted(&self.inner.statics));
+    }
+
+    fn spawn_replenishing_approvals(&self, approvals: ApprovalIter) {
+        if approvals.len() == 0 {
+            return;
+        }
+
+        let this = self.clone();
+        spawn(async move {
+            let mut stream = this.replenish_idle_connections(approvals);
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(()) => {}
+                    Err(e) => this.inner.statics.error_sink.sink(e),
+                }
+            }
+        });
+    }
+
     pub(crate) fn replenish_idle_connections(
         &self,
         approvals: ApprovalIter,
@@ -149,31 +181,13 @@ where
         stream
     }
 
-    pub(crate) fn spawn_replenishing(self, approvals: ApprovalIter) {
-        if approvals.len() == 0 {
-            return;
-        }
-
-        spawn(async move {
-            let mut stream = self.replenish_idle_connections(approvals);
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(()) => {}
-                    Err(e) => self.inner.statics.error_sink.sink(e),
-                }
-            }
-        });
-    }
-
     pub(crate) async fn get(&self) -> Result<Conn<M::Connection>, RunError<M::Error>> {
         loop {
             let conn = {
                 let mut locked = self.inner.internals.lock();
                 match locked.conns.pop_front() {
                     Some(conn) => {
-                        let wanted = locked.want_more(&self.inner.statics);
-                        let approvals = locked.approvals(&self.inner.statics, wanted);
-                        self.clone().spawn_replenishing(approvals);
+                        self.spawn_replenishing_locked(&mut locked);
                         conn
                     }
                     None => break,
@@ -202,7 +216,7 @@ where
             let mut locked = self.inner.internals.lock();
             locked.waiters.push_back(tx);
             let approvals = locked.approvals(&self.inner.statics, 1);
-            self.clone().spawn_replenishing(approvals);
+            self.spawn_replenishing_approvals(approvals);
         };
 
         match timeout(self.inner.statics.connection_timeout, rx).await {
@@ -213,12 +227,6 @@ where
 
     pub(crate) async fn connect(&self) -> Result<M::Connection, M::Error> {
         self.inner.manager.connect().await
-    }
-
-    pub(crate) fn wanted(&self) -> ApprovalIter {
-        let mut internals = self.inner.internals.lock();
-        let wanted = internals.want_more(&self.inner.statics);
-        internals.approvals(&self.inner.statics, wanted)
     }
 
     /// Return connection back in to the pool
@@ -319,9 +327,7 @@ where
         internals.num_conns -= dropped as u32;
         // We might need to spin up more connections to maintain the idle limit, e.g.
         // if we hit connection lifetime limits
-        let num = internals.want_more(&self.inner.statics);
-        self.clone()
-            .spawn_replenishing(internals.approvals(&self.inner.statics, num));
+        self.spawn_replenishing_locked(internals);
     }
 }
 
