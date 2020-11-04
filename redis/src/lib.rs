@@ -3,7 +3,7 @@
 //! # Example
 //!
 //! ```
-//! use futures::future::join_all;
+//! use futures_util::future::join_all;
 //! use bb8_redis::{
 //!     bb8,
 //!     redis::{cmd, AsyncCommands},
