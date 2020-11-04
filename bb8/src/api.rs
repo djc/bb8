@@ -374,15 +374,6 @@ impl<M: ManageConnection> Pool<M> {
         Pool { inner: shared }
     }
 
-    async fn sink_error<'a, E, F, T>(&self, f: F) -> Result<T, ()>
-    where
-        F: Future<Output = Result<T, E>> + Send + 'a,
-        E: Into<M::Error> + 'a,
-        T: 'a,
-    {
-        self.inner.sink_error(f).await
-    }
-
     async fn replenish_idle_connections(&self) -> Result<(), M::Error> {
         let internals = self.inner.internals.lock().await;
         let pool = self.inner.clone();
@@ -403,7 +394,7 @@ impl<M: ManageConnection> Pool<M> {
     pub(crate) fn spawn_replenishing(self) {
         spawn(async move {
             let f = self.replenish_idle_connections();
-            self.sink_error(f).map(|_| ()).await
+            self.inner.sink_error(f).map(|_| ()).await
         });
     }
 
