@@ -221,6 +221,26 @@ where
         }
     }
 
+    fn reap(&self) {
+        let mut internals = self.inner.internals.lock();
+        let now = Instant::now();
+        let before = internals.conns.len();
+
+        internals.conns.retain(|conn| {
+            let mut keep = true;
+            if let Some(timeout) = self.inner.statics.idle_timeout {
+                keep &= now - conn.idle_start < timeout;
+            }
+            if let Some(lifetime) = self.inner.statics.max_lifetime {
+                keep &= now - conn.conn.birth < lifetime;
+            }
+            keep
+        });
+
+        let dropped = before - internals.conns.len();
+        self.drop_connections(&mut internals, dropped);
+    }
+
     // Outside of Pool to avoid borrow splitting issues on self
     async fn add_connection(&self, _: Approval) -> Result<(), M::Error>
     where
@@ -381,24 +401,7 @@ where
         loop {
             let _ = interval.tick().await;
             if let Some(inner) = weak_shared.upgrade() {
-                let pool = PoolInner { inner };
-                let mut internals = pool.inner.internals.lock();
-                let now = Instant::now();
-                let before = internals.conns.len();
-
-                internals.conns.retain(|conn| {
-                    let mut keep = true;
-                    if let Some(timeout) = pool.inner.statics.idle_timeout {
-                        keep &= now - conn.idle_start < timeout;
-                    }
-                    if let Some(lifetime) = pool.inner.statics.max_lifetime {
-                        keep &= now - conn.conn.birth < lifetime;
-                    }
-                    keep
-                });
-
-                let dropped = before - internals.conns.len();
-                pool.drop_connections(&mut internals, dropped);
+                PoolInner { inner }.reap()
             } else {
                 break;
             }
