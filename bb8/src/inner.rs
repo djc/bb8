@@ -91,6 +91,17 @@ impl<M> SharedPool<M>
 where
     M: ManageConnection,
 {
+    pub(crate) async fn wanted(&self) -> u32 {
+        let desired = self.statics.min_idle.unwrap_or(0);
+        let internals = self.internals.lock().await;
+        let idle_or_pending = internals.conns.len() as u32 + internals.pending_conns;
+        if idle_or_pending < desired {
+            desired - idle_or_pending
+        } else {
+            0
+        }
+    }
+
     pub(crate) fn sink_error(&self, result: Result<(), M::Error>) {
         match result {
             Ok(()) => {}

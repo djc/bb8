@@ -36,7 +36,6 @@
 #![allow(clippy::needless_doctest_main)]
 #![deny(missing_docs, missing_debug_implementations)]
 
-use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::error;
 use std::fmt;
@@ -375,19 +374,10 @@ impl<M: ManageConnection> Pool<M> {
     }
 
     async fn replenish_idle_connections(&self) -> Result<(), M::Error> {
-        let internals = self.inner.internals.lock().await;
-        let pool = self.inner.clone();
-        let slots_available = pool.statics.max_size - internals.num_conns - internals.pending_conns;
-        let idle = internals.conns.len() as u32;
-        let desired = pool.statics.min_idle.unwrap_or(0);
-
-        mem::drop(internals);
-
         let stream = FuturesUnordered::new();
-        for _ in idle..max(idle, min(desired, idle + slots_available)) {
-            stream.push(add_connection(pool.clone()));
+        for _ in 0..self.inner.wanted().await {
+            stream.push(add_connection(self.inner.clone()));
         }
-
         stream.try_fold((), |_, _| ok(())).await
     }
 
