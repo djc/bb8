@@ -104,7 +104,8 @@ where
                     Err(_) => {
                         mem::drop(conn);
                         let mut internals = self.inner.internals.lock();
-                        self.drop_connections(&mut internals, 1);
+                        internals.dropped(1);
+                        self.spawn_replenishing_locked(&mut internals);
                     }
                 }
                 continue;
@@ -137,7 +138,8 @@ where
 
         let mut locked = self.inner.internals.lock();
         if broken {
-            self.drop_connections(&mut locked, 1);
+            locked.dropped(1);
+            self.spawn_replenishing_locked(&mut locked);
         } else {
             locked.put(conn, None);
         }
@@ -150,8 +152,9 @@ where
 
     fn reap(&self) {
         let mut internals = self.inner.internals.lock();
-        let dropped = internals.reap(&self.inner.statics);
-        self.drop_connections(&mut internals, dropped);
+        let dropped = internals.reap(&self.inner.statics) as u32;
+        internals.dropped(dropped);
+        self.spawn_replenishing_locked(&mut internals);
     }
 
     // Outside of Pool to avoid borrow splitting issues on self
@@ -187,18 +190,6 @@ where
                 }
             }
         }
-    }
-
-    // Drop connections
-    // NB: This is called with the pool lock held.
-    fn drop_connections(&self, internals: &mut MutexGuard<PoolInternals<M>>, dropped: usize)
-    where
-        M: ManageConnection,
-    {
-        internals.dropped(dropped as u32);
-        // We might need to spin up more connections to maintain the idle limit, e.g.
-        // if we hit connection lifetime limits
-        self.spawn_replenishing_locked(internals);
     }
 }
 
