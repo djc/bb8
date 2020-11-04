@@ -4,3 +4,4 @@ pub use api::{
 };
 
 mod inner;
+mod internals;

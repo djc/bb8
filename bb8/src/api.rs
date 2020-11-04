@@ -46,7 +46,9 @@ use async_trait::async_trait;
 use futures_util::future::{ok, FutureExt};
 use futures_util::stream::TryStreamExt;
 
-use crate::inner::{Conn, PoolInner};
+use crate::inner::PoolInner;
+use crate::internals::Conn;
+pub use crate::internals::State;
 
 /// A trait which provides connection-specific functionality.
 #[async_trait]
@@ -126,16 +128,6 @@ impl<E> ErrorSink<E> for NopErrorSink {
     fn boxed_clone(&self) -> Box<dyn ErrorSink<E>> {
         Box::new(*self)
     }
-}
-
-/// Information about the state of a `Pool`.
-#[derive(Debug)]
-#[non_exhaustive]
-pub struct State {
-    /// The number of connections currently being managed by the pool.
-    pub connections: u32,
-    /// The number of idle connections.
-    pub idle_connections: u32,
 }
 
 /// A builder for a connection pool.

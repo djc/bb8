@@ -1,5 +1,4 @@
 use std::cmp::{max, min};
-use std::collections::VecDeque;
 use std::future::Future;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -11,163 +10,8 @@ use parking_lot::{Mutex, MutexGuard};
 use tokio::spawn;
 use tokio::time::{delay_for, interval_at, timeout, Interval};
 
-use crate::api::{Builder, ManageConnection, RunError, State};
-
-#[derive(Debug)]
-pub(crate) struct Conn<C>
-where
-    C: Send,
-{
-    pub(crate) conn: C,
-    birth: Instant,
-}
-
-impl<C: Send> From<IdleConn<C>> for Conn<C> {
-    fn from(conn: IdleConn<C>) -> Self {
-        conn.conn
-    }
-}
-
-struct IdleConn<C>
-where
-    C: Send,
-{
-    conn: Conn<C>,
-    idle_start: Instant,
-}
-
-impl<C: Send> From<Conn<C>> for IdleConn<C> {
-    fn from(conn: Conn<C>) -> Self {
-        IdleConn {
-            conn,
-            idle_start: Instant::now(),
-        }
-    }
-}
-
-/// The pool data that must be protected by a lock.
-#[allow(missing_debug_implementations)]
-struct PoolInternals<M>
-where
-    M: ManageConnection,
-{
-    waiters: VecDeque<oneshot::Sender<Conn<M::Connection>>>,
-    conns: VecDeque<IdleConn<M::Connection>>,
-    num_conns: u32,
-    pending_conns: u32,
-}
-
-impl<M> PoolInternals<M>
-where
-    M: ManageConnection,
-{
-    fn pop(&mut self) -> Option<Conn<M::Connection>> {
-        self.conns.pop_front().map(|idle| idle.conn)
-    }
-
-    fn put(&mut self, mut conn: IdleConn<M::Connection>, approval: Option<Approval>) {
-        if approval.is_some() {
-            self.pending_conns -= 1;
-            self.num_conns += 1;
-        }
-
-        loop {
-            if let Some(waiter) = self.waiters.pop_front() {
-                // This connection is no longer idle, send it back out.
-                match waiter.send(conn.conn) {
-                    Ok(_) => break,
-                    // Oops, that receiver was gone. Loop and try again.
-                    Err(c) => conn.conn = c,
-                }
-            } else {
-                // Queue it in the idle queue.
-                self.conns.push_back(conn);
-                break;
-            }
-        }
-    }
-
-    fn connect_failed(&mut self, _: Approval) {
-        self.pending_conns -= 1;
-    }
-
-    fn dropped(&mut self, num: u32) {
-        self.num_conns -= num;
-    }
-
-    fn wanted(&mut self, config: &Builder<M>) -> ApprovalIter {
-        let available = self.conns.len() as u32 + self.pending_conns;
-        let min_idle = config.min_idle.unwrap_or(0);
-        let wanted = if available < min_idle {
-            min_idle - available
-        } else {
-            0
-        };
-
-        self.approvals(&config, wanted)
-    }
-
-    fn push_waiter(
-        &mut self,
-        waiter: oneshot::Sender<Conn<M::Connection>>,
-        config: &Builder<M>,
-    ) -> ApprovalIter {
-        self.waiters.push_back(waiter);
-        self.approvals(config, 1)
-    }
-
-    fn approvals(&mut self, config: &Builder<M>, num: u32) -> ApprovalIter {
-        let current = self.num_conns + self.pending_conns;
-        let allowed = if current < config.max_size {
-            config.max_size - current
-        } else {
-            0
-        };
-
-        let num = min(num, allowed);
-        self.pending_conns += num;
-        ApprovalIter { num: num as usize }
-    }
-
-    fn reap(&mut self, config: &Builder<M>) -> usize {
-        let now = Instant::now();
-        let before = self.conns.len();
-
-        self.conns.retain(|conn| {
-            let mut keep = true;
-            if let Some(timeout) = config.idle_timeout {
-                keep &= now - conn.idle_start < timeout;
-            }
-            if let Some(lifetime) = config.max_lifetime {
-                keep &= now - conn.conn.birth < lifetime;
-            }
-            keep
-        });
-
-        before - self.conns.len()
-    }
-
-    pub(crate) fn state(&self) -> State {
-        State {
-            connections: self.num_conns,
-            idle_connections: self.conns.len() as u32,
-        }
-    }
-}
-
-impl<M> Default for PoolInternals<M>
-where
-    M: ManageConnection,
-{
-    fn default() -> Self {
-        Self {
-            waiters: VecDeque::new(),
-            conns: VecDeque::new(),
-            num_conns: 0,
-            pending_conns: 0,
-        }
-    }
-}
+use crate::api::{Builder, ManageConnection, RunError};
+use crate::internals::{Approval, ApprovalIter, Conn, PoolInternals, State};
 
 pub(crate) struct PoolInner<M>
 where
@@ -295,7 +139,7 @@ where
         if broken {
             self.drop_connections(&mut locked, 1);
         } else {
-            locked.put(conn.into(), None);
+            locked.put(conn, None);
         }
     }
 
@@ -326,12 +170,7 @@ where
         loop {
             match shared.manager.connect().await {
                 Ok(conn) => {
-                    let now = Instant::now();
-                    let conn = IdleConn {
-                        conn: Conn { conn, birth: now },
-                        idle_start: now,
-                    };
-
+                    let conn = Conn::new(conn);
                     shared.internals.lock().put(conn, Some(approval));
                     return Ok(());
                 }
@@ -392,34 +231,6 @@ where
     statics: Builder<M>,
     manager: M,
     internals: Mutex<PoolInternals<M>>,
-}
-
-pub(crate) struct ApprovalIter {
-    num: usize,
-}
-
-impl Iterator for ApprovalIter {
-    type Item = Approval;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.num {
-            0 => None,
-            _ => {
-                self.num -= 1;
-                Some(Approval { _priv: () })
-            }
-        }
-    }
-}
-
-impl ExactSizeIterator for ApprovalIter {
-    fn len(&self) -> usize {
-        self.num
-    }
-}
-
-pub(crate) struct Approval {
-    _priv: (),
 }
 
 fn schedule_reaping<M>(mut interval: Interval, weak_shared: Weak<SharedPool<M>>)
