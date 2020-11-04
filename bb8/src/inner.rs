@@ -47,21 +47,25 @@ impl<C: Send> From<Conn<C>> for IdleConn<C> {
 
 /// The pool data that must be protected by a lock.
 #[allow(missing_debug_implementations)]
-struct PoolInternals<C>
+struct PoolInternals<M>
 where
-    C: Send,
+    M: ManageConnection,
 {
-    waiters: VecDeque<oneshot::Sender<Conn<C>>>,
-    conns: VecDeque<IdleConn<C>>,
+    waiters: VecDeque<oneshot::Sender<Conn<M::Connection>>>,
+    conns: VecDeque<IdleConn<M::Connection>>,
     num_conns: u32,
     pending_conns: u32,
 }
 
-impl<C> PoolInternals<C>
+impl<M> PoolInternals<M>
 where
-    C: Send,
+    M: ManageConnection,
 {
-    fn put(&mut self, mut conn: IdleConn<C>, approval: Option<Approval>) {
+    fn pop(&mut self) -> Option<Conn<M::Connection>> {
+        self.conns.pop_front().map(|idle| idle.conn)
+    }
+
+    fn put(&mut self, mut conn: IdleConn<M::Connection>, approval: Option<Approval>) {
         if approval.is_some() {
             self.pending_conns -= 1;
             self.num_conns += 1;
@@ -91,7 +95,7 @@ where
         self.num_conns -= num;
     }
 
-    fn wanted<M: ManageConnection>(&mut self, config: &Builder<M>) -> ApprovalIter {
+    fn wanted(&mut self, config: &Builder<M>) -> ApprovalIter {
         let available = self.conns.len() as u32 + self.pending_conns;
         let min_idle = config.min_idle.unwrap_or(0);
         let wanted = if available < min_idle {
@@ -103,7 +107,16 @@ where
         self.approvals(&config, wanted)
     }
 
-    fn approvals<M: ManageConnection>(&mut self, config: &Builder<M>, num: u32) -> ApprovalIter {
+    fn push_waiter(
+        &mut self,
+        waiter: oneshot::Sender<Conn<M::Connection>>,
+        config: &Builder<M>,
+    ) -> ApprovalIter {
+        self.waiters.push_back(waiter);
+        self.approvals(config, 1)
+    }
+
+    fn approvals(&mut self, config: &Builder<M>, num: u32) -> ApprovalIter {
         let current = self.num_conns + self.pending_conns;
         let allowed = if current < config.max_size {
             config.max_size - current
@@ -115,9 +128,37 @@ where
         self.pending_conns += num;
         ApprovalIter { num: num as usize }
     }
+
+    fn reap(&mut self, config: &Builder<M>) -> usize {
+        let now = Instant::now();
+        let before = self.conns.len();
+
+        self.conns.retain(|conn| {
+            let mut keep = true;
+            if let Some(timeout) = config.idle_timeout {
+                keep &= now - conn.idle_start < timeout;
+            }
+            if let Some(lifetime) = config.max_lifetime {
+                keep &= now - conn.conn.birth < lifetime;
+            }
+            keep
+        });
+
+        before - self.conns.len()
+    }
+
+    pub(crate) fn state(&self) -> State {
+        State {
+            connections: self.num_conns,
+            idle_connections: self.conns.len() as u32,
+        }
+    }
 }
 
-impl<C> Default for PoolInternals<C> where C: Send {
+impl<M> Default for PoolInternals<M>
+where
+    M: ManageConnection,
+{
     fn default() -> Self {
         Self {
             waiters: VecDeque::new(),
@@ -167,7 +208,7 @@ where
         self.inner.internals.lock().wanted(&self.inner.statics)
     }
 
-    fn spawn_replenishing_locked(&self, locked: &mut MutexGuard<PoolInternals<M::Connection>>) {
+    fn spawn_replenishing_locked(&self, locked: &mut MutexGuard<PoolInternals<M>>) {
         self.spawn_replenishing_approvals(locked.wanted(&self.inner.statics));
     }
 
@@ -202,9 +243,9 @@ where
 
     pub(crate) async fn get(&self) -> Result<Conn<M::Connection>, RunError<M::Error>> {
         loop {
-            let conn = {
+            let mut conn = {
                 let mut locked = self.inner.internals.lock();
-                match locked.conns.pop_front() {
+                match locked.pop() {
                     Some(conn) => {
                         self.spawn_replenishing_locked(&mut locked);
                         conn
@@ -214,10 +255,8 @@ where
             };
 
             if self.inner.statics.test_on_check_out {
-                let (mut conn, birth) = (conn.conn.conn, conn.conn.birth);
-
-                match self.inner.manager.is_valid(&mut conn).await {
-                    Ok(()) => return Ok(Conn { conn, birth }),
+                match self.inner.manager.is_valid(&mut conn.conn).await {
+                    Ok(()) => return Ok(conn),
                     Err(_) => {
                         mem::drop(conn);
                         let mut internals = self.inner.internals.lock();
@@ -226,15 +265,14 @@ where
                 }
                 continue;
             } else {
-                return Ok(conn.conn);
+                return Ok(conn);
             }
         }
 
         let (tx, rx) = oneshot::channel();
         {
             let mut locked = self.inner.internals.lock();
-            locked.waiters.push_back(tx);
-            let approvals = locked.approvals(&self.inner.statics, 1);
+            let approvals = locked.push_waiter(tx, &self.inner.statics);
             self.spawn_replenishing_approvals(approvals);
         };
 
@@ -263,30 +301,12 @@ where
 
     /// Returns information about the current state of the pool.
     pub(crate) fn state(&self) -> State {
-        let locked = self.inner.internals.lock();
-        State {
-            connections: locked.num_conns,
-            idle_connections: locked.conns.len() as u32,
-        }
+        self.inner.internals.lock().state()
     }
 
     fn reap(&self) {
         let mut internals = self.inner.internals.lock();
-        let now = Instant::now();
-        let before = internals.conns.len();
-
-        internals.conns.retain(|conn| {
-            let mut keep = true;
-            if let Some(timeout) = self.inner.statics.idle_timeout {
-                keep &= now - conn.idle_start < timeout;
-            }
-            if let Some(lifetime) = self.inner.statics.max_lifetime {
-                keep &= now - conn.conn.birth < lifetime;
-            }
-            keep
-        });
-
-        let dropped = before - internals.conns.len();
+        let dropped = internals.reap(&self.inner.statics);
         self.drop_connections(&mut internals, dropped);
     }
 
@@ -332,11 +352,8 @@ where
 
     // Drop connections
     // NB: This is called with the pool lock held.
-    fn drop_connections(
-        &self,
-        internals: &mut MutexGuard<PoolInternals<M::Connection>>,
-        dropped: usize,
-    ) where
+    fn drop_connections(&self, internals: &mut MutexGuard<PoolInternals<M>>, dropped: usize)
+    where
         M: ManageConnection,
     {
         internals.dropped(dropped as u32);
@@ -374,7 +391,7 @@ where
 {
     statics: Builder<M>,
     manager: M,
-    internals: Mutex<PoolInternals<M::Connection>>,
+    internals: Mutex<PoolInternals<M>>,
 }
 
 pub(crate) struct ApprovalIter {
