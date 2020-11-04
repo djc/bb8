@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use futures::channel::oneshot;
+use futures_channel::oneshot;
 use parking_lot::{Mutex, MutexGuard};
 use tokio::spawn;
 use tokio::time::{delay_for, Interval};

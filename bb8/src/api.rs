@@ -47,9 +47,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use futures::channel::oneshot;
-use futures::future::{ok, FutureExt};
-use futures::stream::{FuturesUnordered, StreamExt, TryStreamExt};
+use futures_channel::oneshot;
+use futures_util::future::{ok, FutureExt};
+use futures_util::stream::{FuturesUnordered, StreamExt, TryStreamExt};
 use parking_lot::Mutex;
 use tokio::time::interval_at;
 use tokio::{spawn, time::timeout};
