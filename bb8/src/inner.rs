@@ -91,13 +91,11 @@ impl<M> SharedPool<M>
 where
     M: ManageConnection,
 {
-    pub(crate) async fn sink_error<'a, E, F, T>(&self, f: F) -> Result<T, ()>
-    where
-        F: Future<Output = Result<T, E>> + Send + 'a,
-        E: Into<M::Error>,
-    {
-        let sink = self.statics.error_sink.boxed_clone();
-        f.await.map_err(|e| sink.sink(e.into()))
+    pub(crate) fn sink_error(&self, result: Result<(), M::Error>) {
+        match result {
+            Ok(()) => {}
+            Err(e) => self.statics.error_sink.sink(e),
+        }
     }
 
     pub(crate) async fn or_timeout<'a, E, F, T>(&self, f: F) -> Result<Option<T>, E>

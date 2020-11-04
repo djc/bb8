@@ -393,8 +393,8 @@ impl<M: ManageConnection> Pool<M> {
 
     pub(crate) fn spawn_replenishing(self) {
         spawn(async move {
-            let f = self.replenish_idle_connections();
-            self.inner.sink_error(f).map(|_| ()).await
+            self.inner
+                .sink_error(self.replenish_idle_connections().await)
         });
     }
 
@@ -496,10 +496,7 @@ impl<M: ManageConnection> Pool<M> {
             locked.waiters.push_back(tx);
             if locked.num_conns + locked.pending_conns < inner.statics.max_size {
                 let inner = inner.clone();
-                spawn(async move {
-                    let f = add_connection(inner.clone());
-                    inner.sink_error(f).map(|_| ()).await;
-                });
+                spawn(async move { inner.sink_error(add_connection(inner.clone()).await) });
             }
         }
 
