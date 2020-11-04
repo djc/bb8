@@ -120,7 +120,8 @@ where
     ) -> FuturesUnordered<impl Future<Output = Result<(), M::Error>>> {
         let stream = FuturesUnordered::new();
         for approval in approvals {
-            stream.push(add_connection(self.clone(), approval));
+            let this = self.clone();
+            stream.push(async move { this.add_connection(approval).await });
         }
         stream
     }
@@ -161,7 +162,7 @@ where
         let (tx, rx) = oneshot::channel();
         if let Some(approval) = self.can_add_more(Some(tx)) {
             let this = self.clone();
-            spawn(async move { this.sink_error(add_connection(this.clone(), approval).await) });
+            spawn(async move { this.sink_error(this.add_connection(approval).await) });
         }
 
         match timeout(self.inner.statics.connection_timeout, rx).await {
@@ -209,6 +210,49 @@ where
         match result {
             Ok(()) => {}
             Err(e) => self.inner.statics.error_sink.sink(e),
+        }
+    }
+
+    // Outside of Pool to avoid borrow splitting issues on self
+    async fn add_connection(&self, _: Approval) -> Result<(), M::Error>
+    where
+        M: ManageConnection,
+    {
+        let new_shared = Arc::downgrade(&self.inner);
+        let shared = match new_shared.upgrade() {
+            None => return Ok(()),
+            Some(shared) => shared,
+        };
+
+        let start = Instant::now();
+        let mut delay = Duration::from_secs(0);
+        loop {
+            match shared.manager.connect().await {
+                Ok(conn) => {
+                    let now = Instant::now();
+                    let conn = IdleConn {
+                        conn: Conn { conn, birth: now },
+                        idle_start: now,
+                    };
+
+                    let mut locked = shared.internals.lock();
+                    locked.pending_conns -= 1;
+                    locked.num_conns += 1;
+                    locked.put_idle_conn(conn);
+                    return Ok(());
+                }
+                Err(e) => {
+                    if Instant::now() - start > self.inner.statics.connection_timeout {
+                        let mut locked = shared.internals.lock();
+                        locked.pending_conns -= 1;
+                        return Err(e);
+                    } else {
+                        delay = max(Duration::from_millis(200), delay);
+                        delay = min(self.inner.statics.connection_timeout / 2, delay * 2);
+                        delay_for(delay).await;
+                    }
+                }
+            }
         }
     }
 
@@ -297,49 +341,6 @@ where
             min_idle - available
         } else {
             0
-        }
-    }
-}
-
-// Outside of Pool to avoid borrow splitting issues on self
-async fn add_connection<M>(pool: PoolInner<M>, _: Approval) -> Result<(), M::Error>
-where
-    M: ManageConnection,
-{
-    let new_shared = Arc::downgrade(&pool.inner);
-    let shared = match new_shared.upgrade() {
-        None => return Ok(()),
-        Some(shared) => shared,
-    };
-
-    let start = Instant::now();
-    let mut delay = Duration::from_secs(0);
-    loop {
-        match shared.manager.connect().await {
-            Ok(conn) => {
-                let now = Instant::now();
-                let conn = IdleConn {
-                    conn: Conn { conn, birth: now },
-                    idle_start: now,
-                };
-
-                let mut locked = shared.internals.lock();
-                locked.pending_conns -= 1;
-                locked.num_conns += 1;
-                locked.put_idle_conn(conn);
-                return Ok(());
-            }
-            Err(e) => {
-                if Instant::now() - start > pool.inner.statics.connection_timeout {
-                    let mut locked = shared.internals.lock();
-                    locked.pending_conns -= 1;
-                    return Err(e);
-                } else {
-                    delay = max(Duration::from_millis(200), delay);
-                    delay = min(pool.inner.statics.connection_timeout / 2, delay * 2);
-                    delay_for(delay).await;
-                }
-            }
         }
     }
 }
