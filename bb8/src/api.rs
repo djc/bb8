@@ -40,7 +40,7 @@ use std::error;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::future::{ok, FutureExt};
@@ -354,13 +354,7 @@ impl<M: ManageConnection> Pool<M> {
     pub async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
         self.inner
             .get()
-            .map(move |res| {
-                res.map(|conn| PooledConnection {
-                    pool: self,
-                    checkout: Instant::now(),
-                    conn: Some(conn),
-                })
-            })
+            .map(move |res| res.map(|conn| PooledConnection::new(self, conn)))
             .await
     }
 
@@ -381,8 +375,19 @@ where
     M: ManageConnection,
 {
     pool: &'a Pool<M>,
-    checkout: Instant,
     conn: Option<Conn<M::Connection>>,
+}
+
+impl<'a, M> PooledConnection<'a, M>
+where
+    M: ManageConnection,
+{
+    fn new(pool: &'a Pool<M>, conn: Conn<M::Connection>) -> Self {
+        Self {
+            pool,
+            conn: Some(conn),
+        }
+    }
 }
 
 impl<'a, M> Deref for PooledConnection<'a, M>
@@ -420,8 +425,6 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        self.pool
-            .inner
-            .put_back(self.checkout, self.conn.take().unwrap().conn);
+        self.pool.inner.put_back(self.conn.take().unwrap());
     }
 }

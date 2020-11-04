@@ -22,6 +22,12 @@ where
     birth: Instant,
 }
 
+impl<C: Send> From<IdleConn<C>> for Conn<C> {
+    fn from(conn: IdleConn<C>) -> Self {
+        conn.conn
+    }
+}
+
 struct IdleConn<C>
 where
     C: Send,
@@ -30,15 +36,11 @@ where
     idle_start: Instant,
 }
 
-impl<C> IdleConn<C>
-where
-    C: Send,
-{
-    pub(crate) fn make_idle(conn: Conn<C>) -> IdleConn<C> {
-        let now = Instant::now();
+impl<C: Send> From<Conn<C>> for IdleConn<C> {
+    fn from(conn: Conn<C>) -> Self {
         IdleConn {
             conn,
-            idle_start: now,
+            idle_start: Instant::now(),
         }
     }
 }
@@ -59,7 +61,7 @@ impl<C> PoolInternals<C>
 where
     C: Send,
 {
-    fn put_idle_conn(&mut self, mut conn: IdleConn<C>) {
+    fn put(&mut self, mut conn: IdleConn<C>) {
         loop {
             if let Some(waiter) = self.waiters.pop_front() {
                 // This connection is no longer idle, send it back out.
@@ -230,16 +232,15 @@ where
     }
 
     /// Return connection back in to the pool
-    pub(crate) fn put_back(&self, birth: Instant, mut conn: M::Connection) {
+    pub(crate) fn put_back(&self, mut conn: Conn<M::Connection>) {
         // Supposed to be fast, but do it before locking anyways.
-        let broken = self.inner.manager.has_broken(&mut conn);
+        let broken = self.inner.manager.has_broken(&mut conn.conn);
 
         let mut locked = self.inner.internals.lock();
         if broken {
             self.drop_connections(&mut locked, 1);
         } else {
-            let conn = IdleConn::make_idle(Conn { conn, birth });
-            locked.put_idle_conn(conn);
+            locked.put(conn.into());
         }
     }
 
@@ -297,7 +298,7 @@ where
                     let mut locked = shared.internals.lock();
                     locked.pending_conns -= 1;
                     locked.num_conns += 1;
-                    locked.put_idle_conn(conn);
+                    locked.put(conn);
                     return Ok(());
                 }
                 Err(e) => {
