@@ -1,5 +1,6 @@
 use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
+use futures_util::future::{FutureExt, TryFutureExt};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Error, Response, Server};
 
@@ -30,33 +31,29 @@ async fn main() {
                     let pool = pool.clone();
                     async move {
                         println!("Got request");
-
-                        let result = pool
-                            .run(move |connection| async {
-                                let select = match connection.prepare("SELECT 1").await {
-                                    Ok(select) => select,
-                                    Err(e) => return Err((e, connection)),
-                                };
-
-                                let row = match connection.query_one(&select, &[]).await {
-                                    Ok(row) => row,
-                                    Err(e) => return Err((e, connection)),
-                                };
-
-                                let v = row.get::<usize, i32>(0);
-                                println!("Sending success response");
-                                let rsp = Response::new(Body::from(format!("Got results {:?}", v)));
-                                Ok((rsp, connection))
-                            })
-                            .await;
-
-                        Ok::<_, Error>(match result {
-                            Ok(rsp) => rsp,
-                            Err(e) => {
-                                println!("Sending error response");
-                                Response::new(Body::from(format!("Internal error {:?}", e)))
-                            }
-                        })
+                        Ok::<_, Error>(
+                            pool.get()
+                                .and_then(|connection| async {
+                                    let select = connection.prepare("SELECT 1").await?;
+                                    Ok((connection, select))
+                                })
+                                .and_then(|(connection, select)| async move {
+                                    let row = connection.query_one(&select, &[]).await?;
+                                    Ok(row)
+                                })
+                                .map(|result| match result {
+                                    Ok(row) => {
+                                        let v = row.get::<usize, i32>(0);
+                                        println!("Sending success response");
+                                        Response::new(Body::from(format!("Got results {:?}", v)))
+                                    }
+                                    Err(e) => {
+                                        println!("Sending error response");
+                                        Response::new(Body::from(format!("Internal error {:?}", e)))
+                                    }
+                                })
+                                .await,
+                        )
                     }
                 }))
             }

@@ -22,5 +22,6 @@ tokio = { version = "0.2", features = ["rt-core", "macros"] }
 tokio-postgres = "0.5.1"
 
 [dev-dependencies]
+futures-util = "0.3"
 hyper = { version = "0.13" }
 tokio = { version = "0.2", features = ["rt-threaded"] }

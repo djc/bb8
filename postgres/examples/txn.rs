@@ -18,34 +18,25 @@ async fn main() {
         Err(e) => panic!("builder error: {:?}", e),
     };
 
-    let _ = pool
-        .run(|connection| async {
-            if let Err(e) = connection.simple_query("BEGIN").await {
-                return Err((e, connection));
+    let connection = pool.get().await.unwrap();
+    connection.simple_query("BEGIN").await.unwrap();
+
+    let err = match connection.prepare("SELECT 1").await {
+        Ok(select) => match connection.query_one(&select, &[]).await {
+            Ok(row) => {
+                println!("result: {}", row.get::<usize, i32>(0));
+                None
             }
+            Err(e) => Some(e),
+        },
+        Err(e) => Some(e),
+    };
 
-            let err = match connection.prepare("SELECT 1").await {
-                Ok(select) => match connection.query_one(&select, &[]).await {
-                    Ok(row) => {
-                        println!("result: {}", row.get::<usize, i32>(0));
-                        None
-                    }
-                    Err(e) => Some(e),
-                },
-                Err(e) => Some(e),
-            };
+    let finalize_query = match &err {
+        None => "COMMIT",
+        Some(_) => "ROLLBACK",
+    };
 
-            let finalize_query = match &err {
-                None => "COMMIT",
-                Some(_) => "ROLLBACK",
-            };
-
-            let _ = connection.simple_query(finalize_query).await;
-            match err {
-                Some(e) => Err((e, connection)),
-                None => Ok(((), connection)),
-            }
-        })
-        .await
-        .map_err(|e| panic!("{:?}", e));
+    let _ = connection.simple_query(finalize_query).await;
+    err.unwrap();
 }

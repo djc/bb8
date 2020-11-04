@@ -20,21 +20,8 @@ async fn main() {
         Err(e) => panic!("builder error: {:?}", e),
     };
 
-    let _ = pool
-        .run(|connection| async {
-            let select = match connection.prepare("SELECT 1").await {
-                Ok(stmt) => stmt,
-                Err(e) => return Err((e, connection)),
-            };
-
-            match connection.query_one(&select, &[]).await {
-                Ok(row) => {
-                    println!("result: {}", row.get::<usize, i32>(0));
-                    Ok(((), connection))
-                }
-                Err(e) => Err((e, connection)),
-            }
-        })
-        .await
-        .map_err(|e| panic!("{:?}", e));
+    let connection = pool.get().await.unwrap();
+    let select = connection.prepare("SELECT 1").await.unwrap();
+    let row = connection.query_one(&select, &[]).await.unwrap();
+    println!("result: {}", row.get::<usize, i32>(0));
 }
