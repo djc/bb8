@@ -353,7 +353,7 @@ impl<M: ManageConnection> Pool<M> {
     /// Retrieves a connection from the pool.
     pub async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
         self.inner
-            .get_conn::<M::Error>()
+            .get()
             .map(move |res| {
                 res.map(|conn| PooledConnection {
                     pool: self,

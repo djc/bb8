@@ -127,6 +127,10 @@ where
     }
 
     pub(crate) fn spawn_replenishing(self, approvals: ApprovalIter) {
+        if approvals.len() == 0 {
+            return;
+        }
+
         spawn(async move {
             let mut stream = self.replenish_idle_connections(approvals);
             while let Some(result) = stream.next().await {
@@ -135,12 +139,20 @@ where
         });
     }
 
-    pub(crate) async fn get_conn<E>(&self) -> Result<Conn<M::Connection>, RunError<E>> {
-        while let Some((conn, approvals)) = self.get() {
-            // Spin up a new connection if necessary to retain our minimum idle count
-            if approvals.len() > 0 {
-                self.clone().spawn_replenishing(approvals);
-            }
+    pub(crate) async fn get(&self) -> Result<Conn<M::Connection>, RunError<M::Error>> {
+        loop {
+            let conn = {
+                let mut locked = self.inner.internals.lock();
+                match locked.conns.pop_front() {
+                    Some(conn) => {
+                        let wanted = self.inner.want_more(&mut locked);
+                        let approvals = self.inner.approvals(&mut locked, wanted);
+                        self.clone().spawn_replenishing(approvals);
+                        conn
+                    }
+                    None => break,
+                }
+            };
 
             if self.inner.statics.test_on_check_out {
                 let (mut conn, birth) = (conn.conn.conn, conn.conn.birth);
@@ -160,10 +172,12 @@ where
         }
 
         let (tx, rx) = oneshot::channel();
-        if let Some(approval) = self.can_add_more(Some(tx)) {
-            let this = self.clone();
-            spawn(async move { this.sink_error(this.add_connection(approval).await) });
-        }
+        {
+            let mut locked = self.inner.internals.lock();
+            locked.waiters.push_back(tx);
+            let approvals = self.inner.approvals(&mut locked, 1);
+            self.clone().spawn_replenishing(approvals);
+        };
 
         match timeout(self.inner.statics.connection_timeout, rx).await {
             Ok(Ok(conn)) => Ok(conn),
@@ -253,31 +267,6 @@ where
                     }
                 }
             }
-        }
-    }
-
-    fn get(&self) -> Option<(IdleConn<M::Connection>, ApprovalIter)> {
-        let mut locked = self.inner.internals.lock();
-        locked.conns.pop_front().map(|conn| {
-            let wanted = self.inner.want_more(&mut locked);
-            (conn, self.inner.approvals(&mut locked, wanted))
-        })
-    }
-
-    fn can_add_more(
-        &self,
-        waiter: Option<oneshot::Sender<Conn<M::Connection>>>,
-    ) -> Option<Approval> {
-        let mut locked = self.inner.internals.lock();
-        if let Some(waiter) = waiter {
-            locked.waiters.push_back(waiter);
-        }
-
-        if locked.num_conns + locked.pending_conns < self.inner.statics.max_size {
-            locked.pending_conns += 1;
-            Some(Approval { _priv: () })
-        } else {
-            None
         }
     }
 }
