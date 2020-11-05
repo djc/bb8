@@ -1,7 +1,11 @@
 [package]
 name = "bb8-redis"
 version = "0.5.0"
-authors = ["Daniel Smith <smith.daniel.br@gmail.com>", "Kyle Huey <khuey@kylehuey.com>"]
+authors = [
+    "Dirkjan Ochtman <dirkjan@ochtman.nl>",
+    "Daniel Smith <smith.daniel.br@gmail.com>",
+    "Kyle Huey <khuey@kylehuey.com>"
+]
 description = "r2d2-redis, but for async tokio based connections"
 license = "MIT"
 repository = "https://github.com/khuey/bb8"
