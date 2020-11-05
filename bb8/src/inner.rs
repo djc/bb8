@@ -155,8 +155,7 @@ where
 
     fn reap(&self) {
         let mut internals = self.inner.internals.lock();
-        let dropped = internals.reap(&self.inner.statics) as u32;
-        internals.dropped(dropped);
+        internals.reap(&self.inner.statics);
         self.spawn_replenishing_locked(&mut internals);
     }
 

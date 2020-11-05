@@ -91,7 +91,7 @@ where
         ApprovalIter { num: num as usize }
     }
 
-    pub(crate) fn reap(&mut self, config: &Builder<M>) -> usize {
+    pub(crate) fn reap(&mut self, config: &Builder<M>) {
         let now = Instant::now();
         let before = self.conns.len();
 
@@ -106,7 +106,7 @@ where
             keep
         });
 
-        before - self.conns.len()
+        self.dropped((before - self.conns.len()) as u32);
     }
 
     pub(crate) fn state(&self) -> State {
