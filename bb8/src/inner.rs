@@ -44,7 +44,8 @@ where
     }
 
     pub(crate) async fn start_connections(&self) -> Result<(), M::Error> {
-        let mut stream = self.replenish_idle_connections(self.wanted());
+        let wanted = self.inner.internals.lock().wanted(&self.inner.statics);
+        let mut stream = self.replenish_idle_connections(wanted);
         while let Some(result) = stream.next().await {
             result?
         }
@@ -54,10 +55,6 @@ where
     pub(crate) fn spawn_start_connections(&self) {
         let mut locked = self.inner.internals.lock();
         self.spawn_replenishing_approvals(locked.wanted(&self.inner.statics));
-    }
-
-    fn wanted(&self) -> ApprovalIter {
-        self.inner.internals.lock().wanted(&self.inner.statics)
     }
 
     fn spawn_replenishing_locked(&self, locked: &mut MutexGuard<PoolInternals<M>>) {
