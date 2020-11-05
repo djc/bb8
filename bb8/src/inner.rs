@@ -98,16 +98,16 @@ where
                 }
             };
 
-            if self.inner.statics.test_on_check_out {
-                match self.inner.manager.is_valid(&mut conn).await {
-                    Ok(()) => return Ok(conn),
-                    Err(_) => {
-                        conn.drop_invalid();
-                        continue
-                    }
-                }
-            } else {
+            if !self.inner.statics.test_on_check_out {
                 return Ok(conn);
+            }
+
+            match self.inner.manager.is_valid(&mut conn).await {
+                Ok(()) => return Ok(conn),
+                Err(_) => {
+                    conn.drop_invalid();
+                    continue;
+                }
             }
         }
 
