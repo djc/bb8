@@ -55,6 +55,12 @@ jobs:
           command: clippy
           args: --workspace --all-targets -- -D warnings
 
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: EmbarkStudios/cargo-deny-action@v1
+
   coverage:
     runs-on: ubuntu-latest
     steps:
