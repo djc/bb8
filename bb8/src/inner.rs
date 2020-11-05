@@ -51,7 +51,7 @@ where
         Ok(())
     }
 
-    pub(crate) fn spawn_replenishing(&self) {
+    pub(crate) fn spawn_start_connections(&self) {
         let mut locked = self.inner.internals.lock();
         self.spawn_replenishing_approvals(locked.wanted(&self.inner.statics));
     }
