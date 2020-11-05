@@ -2,9 +2,9 @@
 name = "bb8"
 version = "0.4.2"
 authors = ["Kyle Huey <khuey@kylehuey.com>", "Dirkjan Ochtman <dirkjan@ochtman.nl>"]
-description = "r2d2, but for async tokio based connections"
+description = "Full-featured async (tokio) connection pooling, based on r2d2"
 license = "MIT"
-repository = "https://github.com/khuey/bb8"
+repository = "https://github.com/djc/bb8"
 edition = "2018"
 workspace = ".."
 
