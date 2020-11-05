@@ -22,8 +22,13 @@ impl<M> PoolInternals<M>
 where
     M: ManageConnection,
 {
-    pub(crate) fn pop(&mut self) -> Option<Conn<M::Connection>> {
-        self.conns.pop_front().map(|idle| idle.conn)
+    pub(crate) fn pop(
+        &mut self,
+        config: &Builder<M>,
+    ) -> Option<(Conn<M::Connection>, ApprovalIter)> {
+        self.conns
+            .pop_front()
+            .map(|idle| (idle.conn, self.wanted(config)))
     }
 
     pub(crate) fn put(&mut self, conn: Conn<M::Connection>, approval: Option<Approval>) {
@@ -53,8 +58,9 @@ where
         self.pending_conns -= 1;
     }
 
-    pub(crate) fn dropped(&mut self, num: u32) {
+    pub(crate) fn dropped(&mut self, num: u32, config: &Builder<M>) -> ApprovalIter {
         self.num_conns -= num;
+        self.wanted(config)
     }
 
     pub(crate) fn wanted(&mut self, config: &Builder<M>) -> ApprovalIter {
@@ -91,7 +97,7 @@ where
         ApprovalIter { num: num as usize }
     }
 
-    pub(crate) fn reap(&mut self, config: &Builder<M>) {
+    pub(crate) fn reap(&mut self, config: &Builder<M>) -> ApprovalIter {
         let now = Instant::now();
         let before = self.conns.len();
 
@@ -106,7 +112,7 @@ where
             keep
         });
 
-        self.dropped((before - self.conns.len()) as u32);
+        self.dropped((before - self.conns.len()) as u32, config)
     }
 
     pub(crate) fn state(&self) -> State {
@@ -131,6 +137,7 @@ where
     }
 }
 
+#[must_use]
 pub(crate) struct ApprovalIter {
     num: usize,
 }
@@ -155,6 +162,7 @@ impl ExactSizeIterator for ApprovalIter {
     }
 }
 
+#[must_use]
 pub(crate) struct Approval {
     _priv: (),
 }

@@ -90,9 +90,9 @@ where
         loop {
             let mut conn = {
                 let mut locked = self.inner.internals.lock();
-                match locked.pop() {
-                    Some(conn) => {
-                        self.spawn_replenishing_approvals(locked.wanted(&self.inner.statics));
+                match locked.pop(&self.inner.statics) {
+                    Some((conn, approvals)) => {
+                        self.spawn_replenishing_approvals(approvals);
                         PooledConnection::new(self, conn)
                     }
                     None => break,
@@ -143,8 +143,8 @@ where
         match conn {
             Some(conn) => locked.put(conn, None),
             None => {
-                locked.dropped(1);
-                self.spawn_replenishing_approvals(locked.wanted(&self.inner.statics));
+                let approvals = locked.dropped(1, &self.inner.statics);
+                self.spawn_replenishing_approvals(approvals);
             }
         }
     }
@@ -156,8 +156,8 @@ where
 
     fn reap(&self) {
         let mut internals = self.inner.internals.lock();
-        internals.reap(&self.inner.statics);
-        self.spawn_replenishing_approvals(internals.wanted(&self.inner.statics));
+        let approvals = internals.reap(&self.inner.statics);
+        self.spawn_replenishing_approvals(approvals);
     }
 
     // Outside of Pool to avoid borrow splitting issues on self
