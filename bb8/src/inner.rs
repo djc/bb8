@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use futures_channel::oneshot;
 use futures_util::stream::{FuturesUnordered, StreamExt};
-use parking_lot::{Mutex, MutexGuard};
+use parking_lot::Mutex;
 use tokio::spawn;
 use tokio::time::{delay_for, interval_at, timeout, Interval};
 
@@ -57,10 +57,6 @@ where
         self.spawn_replenishing_approvals(locked.wanted(&self.inner.statics));
     }
 
-    fn spawn_replenishing_locked(&self, locked: &mut MutexGuard<PoolInternals<M>>) {
-        self.spawn_replenishing_approvals(locked.wanted(&self.inner.statics));
-    }
-
     fn spawn_replenishing_approvals(&self, approvals: ApprovalIter) {
         if approvals.len() == 0 {
             return;
@@ -96,7 +92,7 @@ where
                 let mut locked = self.inner.internals.lock();
                 match locked.pop() {
                     Some(conn) => {
-                        self.spawn_replenishing_locked(&mut locked);
+                        self.spawn_replenishing_approvals(locked.wanted(&self.inner.statics));
                         PooledConnection::new(self, conn)
                     }
                     None => break,
@@ -148,7 +144,7 @@ where
             Some(conn) => locked.put(conn, None),
             None => {
                 locked.dropped(1);
-                self.spawn_replenishing_locked(&mut locked);
+                self.spawn_replenishing_approvals(locked.wanted(&self.inner.statics));
             }
         }
     }
@@ -161,7 +157,7 @@ where
     fn reap(&self) {
         let mut internals = self.inner.internals.lock();
         internals.reap(&self.inner.statics);
-        self.spawn_replenishing_locked(&mut internals);
+        self.spawn_replenishing_approvals(internals.wanted(&self.inner.statics));
     }
 
     // Outside of Pool to avoid borrow splitting issues on self
