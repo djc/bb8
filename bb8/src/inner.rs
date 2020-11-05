@@ -8,7 +8,7 @@ use futures_channel::oneshot;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use parking_lot::Mutex;
 use tokio::spawn;
-use tokio::time::{delay_for, interval_at, timeout, Interval};
+use tokio::time::{interval_at, sleep, timeout, Interval};
 
 use crate::api::{Builder, ManageConnection, PooledConnection, RunError};
 use crate::internals::{Approval, ApprovalIter, Conn, PoolInternals, State};
@@ -188,7 +188,7 @@ where
                     } else {
                         delay = max(Duration::from_millis(200), delay);
                         delay = min(self.inner.statics.connection_timeout / 2, delay * 2);
-                        delay_for(delay).await;
+                        sleep(delay).await;
                     }
                 }
             }
