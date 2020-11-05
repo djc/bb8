@@ -102,15 +102,10 @@ where
                 match self.inner.manager.is_valid(&mut conn).await {
                     Ok(()) => return Ok(conn),
                     Err(_) => {
-                        // Make sure we kill the connection without putting it back in the pool
-                        // (which would happen if we just dropped the PooledConnection here).
-                        let _ = conn.extract();
-                        let mut internals = self.inner.internals.lock();
-                        internals.dropped(1);
-                        self.spawn_replenishing_locked(&mut internals);
+                        conn.drop_invalid();
+                        continue
                     }
                 }
-                continue;
             } else {
                 return Ok(conn);
             }
@@ -134,16 +129,22 @@ where
     }
 
     /// Return connection back in to the pool
-    pub(crate) fn put_back(&self, mut conn: Conn<M::Connection>) {
-        // Supposed to be fast, but do it before locking anyways.
-        let broken = self.inner.manager.has_broken(&mut conn.conn);
+    pub(crate) fn put_back(&self, conn: Option<Conn<M::Connection>>) {
+        let conn = conn.and_then(|mut conn| {
+            if !self.inner.manager.has_broken(&mut conn.conn) {
+                Some(conn)
+            } else {
+                None
+            }
+        });
 
         let mut locked = self.inner.internals.lock();
-        if broken {
-            locked.dropped(1);
-            self.spawn_replenishing_locked(&mut locked);
-        } else {
-            locked.put(conn, None);
+        match conn {
+            Some(conn) => locked.put(conn, None),
+            None => {
+                locked.dropped(1);
+                self.spawn_replenishing_locked(&mut locked);
+            }
         }
     }
 

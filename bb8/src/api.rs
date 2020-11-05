@@ -378,8 +378,8 @@ where
         }
     }
 
-    pub(crate) fn extract(&mut self) -> Option<Conn<M::Connection>> {
-        self.conn.take()
+    pub(crate) fn drop_invalid(mut self) {
+        let _ = self.conn.take();
     }
 }
 
@@ -418,8 +418,6 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        if let Some(conn) = self.conn.take() {
-            self.pool.put_back(conn);
-        }
+        self.pool.put_back(self.conn.take());
     }
 }
