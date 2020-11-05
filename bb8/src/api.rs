@@ -43,8 +43,6 @@ use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures_util::future::ok;
-use futures_util::stream::TryStreamExt;
 
 use crate::inner::PoolInner;
 use crate::internals::Conn;
@@ -288,8 +286,7 @@ impl<M: ManageConnection> Builder<M> {
     /// minimum number of connections, or it times out.
     pub async fn build(self, manager: M) -> Result<Pool<M>, M::Error> {
         let pool = self.build_inner(manager);
-        let stream = pool.inner.replenish_idle_connections(pool.inner.wanted());
-        stream.try_fold((), |_, _| ok(())).await.map(|()| pool)
+        pool.inner.start_connections().await.map(|()| pool)
     }
 
     /// Consumes the builder, returning a new, initialized `Pool`.

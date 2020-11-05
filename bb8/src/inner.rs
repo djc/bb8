@@ -43,12 +43,20 @@ where
         Self { inner }
     }
 
+    pub(crate) async fn start_connections(&self) -> Result<(), M::Error> {
+        let mut stream = self.replenish_idle_connections(self.wanted());
+        while let Some(result) = stream.next().await {
+            result?
+        }
+        Ok(())
+    }
+
     pub(crate) fn spawn_replenishing(&self) {
         let mut locked = self.inner.internals.lock();
         self.spawn_replenishing_approvals(locked.wanted(&self.inner.statics));
     }
 
-    pub(crate) fn wanted(&self) -> ApprovalIter {
+    fn wanted(&self) -> ApprovalIter {
         self.inner.internals.lock().wanted(&self.inner.statics)
     }
 
@@ -73,7 +81,7 @@ where
         });
     }
 
-    pub(crate) fn replenish_idle_connections(
+    fn replenish_idle_connections(
         &self,
         approvals: ApprovalIter,
     ) -> FuturesUnordered<impl Future<Output = Result<(), M::Error>>> {
