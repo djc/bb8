@@ -43,7 +43,7 @@ use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures_util::future::{ok, FutureExt};
+use futures_util::future::ok;
 use futures_util::stream::TryStreamExt;
 
 use crate::inner::PoolInner;
@@ -52,7 +52,7 @@ pub use crate::internals::State;
 
 /// A trait which provides connection-specific functionality.
 #[async_trait]
-pub trait ManageConnection: Send + Sync + 'static {
+pub trait ManageConnection: Sized + Send + Sync + 'static {
     /// The connection type this manager deals with.
     type Connection: Send + 'static;
     /// The error type returned by `Connection`s.
@@ -61,7 +61,7 @@ pub trait ManageConnection: Send + Sync + 'static {
     /// Attempts to create a new connection.
     async fn connect(&self) -> Result<Self::Connection, Self::Error>;
     /// Determines if the connection is still connected to the database.
-    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error>;
+    async fn is_valid(&self, conn: &mut PooledConnection<'_, Self>) -> Result<(), Self::Error>;
     /// Synchronously determine if the connection is no longer usable, if possible.
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
 }
@@ -344,10 +344,7 @@ impl<M: ManageConnection> Pool<M> {
 
     /// Retrieves a connection from the pool.
     pub async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
-        self.inner
-            .get()
-            .map(move |res| res.map(|conn| PooledConnection::new(self, conn)))
-            .await
+        self.inner.get().await
     }
 
     /// Get a new dedicated connection that will not be managed by the pool.
@@ -366,7 +363,7 @@ pub struct PooledConnection<'a, M>
 where
     M: ManageConnection,
 {
-    pool: &'a Pool<M>,
+    pool: &'a PoolInner<M>,
     conn: Option<Conn<M::Connection>>,
 }
 
@@ -374,11 +371,15 @@ impl<'a, M> PooledConnection<'a, M>
 where
     M: ManageConnection,
 {
-    fn new(pool: &'a Pool<M>, conn: Conn<M::Connection>) -> Self {
+    pub(crate) fn new(pool: &'a PoolInner<M>, conn: Conn<M::Connection>) -> Self {
         Self {
             pool,
             conn: Some(conn),
         }
+    }
+
+    pub(crate) fn extract(&mut self) -> Option<Conn<M::Connection>> {
+        self.conn.take()
     }
 }
 
@@ -417,6 +418,8 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        self.pool.inner.put_back(self.conn.take().unwrap());
+        if let Some(conn) = self.conn.take() {
+            self.pool.put_back(conn);
+        }
     }
 }

@@ -1,8 +1,8 @@
 use std::cmp::{max, min};
+use std::fmt;
 use std::future::Future;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
-use std::{fmt, mem};
 
 use futures_channel::oneshot;
 use futures_util::stream::{FuturesUnordered, StreamExt};
@@ -10,7 +10,7 @@ use parking_lot::{Mutex, MutexGuard};
 use tokio::spawn;
 use tokio::time::{delay_for, interval_at, timeout, Interval};
 
-use crate::api::{Builder, ManageConnection, RunError};
+use crate::api::{Builder, ManageConnection, PooledConnection, RunError};
 use crate::internals::{Approval, ApprovalIter, Conn, PoolInternals, State};
 
 pub(crate) struct PoolInner<M>
@@ -85,24 +85,26 @@ where
         stream
     }
 
-    pub(crate) async fn get(&self) -> Result<Conn<M::Connection>, RunError<M::Error>> {
+    pub(crate) async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
         loop {
             let mut conn = {
                 let mut locked = self.inner.internals.lock();
                 match locked.pop() {
                     Some(conn) => {
                         self.spawn_replenishing_locked(&mut locked);
-                        conn
+                        PooledConnection::new(self, conn)
                     }
                     None => break,
                 }
             };
 
             if self.inner.statics.test_on_check_out {
-                match self.inner.manager.is_valid(&mut conn.conn).await {
+                match self.inner.manager.is_valid(&mut conn).await {
                     Ok(()) => return Ok(conn),
                     Err(_) => {
-                        mem::drop(conn);
+                        // Make sure we kill the connection without putting it back in the pool
+                        // (which would happen if we just dropped the PooledConnection here).
+                        let _ = conn.extract();
                         let mut internals = self.inner.internals.lock();
                         internals.dropped(1);
                         self.spawn_replenishing_locked(&mut internals);
@@ -122,7 +124,7 @@ where
         };
 
         match timeout(self.inner.statics.connection_timeout, rx).await {
-            Ok(Ok(conn)) => Ok(conn),
+            Ok(Ok(conn)) => Ok(PooledConnection::new(self, conn)),
             _ => Err(RunError::TimedOut),
         }
     }
