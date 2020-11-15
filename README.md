@@ -23,7 +23,7 @@ Backend | Adapter Crate
 [rsmq](https://github.com/smrchy/rsmq) | [rsmq_async](https://crates.io/crates/rsmq_async)
 [bolt-client](https://crates.io/crates/bolt-client) | [bb8-bolt](https://crates.io/crates/bb8-bolt)
 [diesel](https://crates.io/crates/diesel) | [bb8-diesel](https://crates.io/crates/bb8-diesel)
-[tiberius](https://crates.io/crates/tiberius) | [bb8-tiberius](https://crates.io/crates/bb8-tiberius]
+[tiberius](https://crates.io/crates/tiberius) | [bb8-tiberius](https://crates.io/crates/bb8-tiberius)
 [nebula-graph-client](https://crates.io/crates/nebula-graph-client) | [bb8-nebula-graph](https://crates.io/crates/bb8-nebula-graph)
 
 ## Example
