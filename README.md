@@ -29,6 +29,8 @@ Backend | Adapter Crate
 [diesel](https://crates.io/crates/diesel) | [bb8-diesel](https://crates.io/crates/bb8-diesel)
 [tiberius](https://crates.io/crates/tiberius) | [bb8-tiberius](https://crates.io/crates/bb8-tiberius)
 [nebula-graph-client](https://crates.io/crates/nebula-graph-client) | [bb8-nebula-graph](https://crates.io/crates/bb8-nebula-graph)
+[memcache-async](https://github.com/vavrusa/memcache-async) | [bb8-memcached](https://crates.io/crates/bb8-memcached)
+[lapin](https://crates.io/crates/lapin) | [bb8-lapin](https://crates.io/crates/bb8-lapin)
 
 ## Example
 
