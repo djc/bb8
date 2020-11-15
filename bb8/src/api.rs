@@ -15,9 +15,6 @@
 //! Using an imaginary "foodb" database.
 //!
 //! ```ignore
-//! use bb8;
-//! use bb8_foodb;
-//!
 //! #[tokio::main]
 //! async fn main() {
 //!     let manager = bb8_foodb::FooConnectionManager::new("localhost:1234");

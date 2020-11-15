@@ -21,18 +21,11 @@ Backend | Adapter Crate
 [tokio-postgres](https://github.com/sfackler/rust-postgres) | [bb8-postgres](https://crates.io/crates/bb8-postgres)
 [redis](https://github.com/mitsuhiko/redis-rs) | [bb8-redis](https://crates.io/crates/bb8-redis)
 
-
-
 ## Example
 
 Using an imaginary "foodb" database.
 
 ```rust
-use std::thread;
-
-extern crate bb8;
-extern crate bb8_foodb;
-
 fn main() {
     let manager = bb8_foodb::FooConnectionManager::new("localhost:1234");
     let pool = bb8::Pool::builder()
@@ -42,8 +35,8 @@ fn main() {
 
     for _ in 0..20 {
         let pool = pool.clone();
-        thread::spawn(move || {
-            let conn = pool.get().unwrap();
+        tokio::spawn(move || {
+            let conn = pool.get().await.unwrap();
             // use the connection
             // it will be returned to the pool when it falls out of scope.
         })
