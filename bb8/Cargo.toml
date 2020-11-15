@@ -13,7 +13,7 @@ async-trait = "0.1"
 futures-channel = "0.3.2"
 futures-util = { version = "0.3.2", default-features = false, features = ["channel"] }
 parking_lot = "0.11"
-tokio = { version = "0.2", features = ["rt-core", "time"] }
+tokio = { version = "0.2", features = ["rt-core", "time", "parking_lot"] }
 
 [dev-dependencies]
 tokio = { version = "0.2", features = ["macros"] }
