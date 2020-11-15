@@ -1,5 +1,5 @@
-//! A generic connection pool, designed for asynchronous tokio-based connections
-//! This is an asynchronous tokio-based version of r2d2.
+//! A full-featured connection pool, designed for asynchronous connections
+//! (using tokio). Originally based on [r2d2](https://github.com/sfackler/r2d2).
 //!
 //! Opening a new database connection every time one is needed is both
 //! inefficient and can lead to resource exhaustion under high traffic
