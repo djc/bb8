@@ -22,8 +22,8 @@ A (possibly not exhaustive) list of adapters for different backends:
 
 Backend | Adapter Crate
 ------- | -------------
-[tokio-postgres](https://github.com/sfackler/rust-postgres) | [bb8-postgres](https://crates.io/crates/bb8-postgres)
-[redis](https://github.com/mitsuhiko/redis-rs) | [bb8-redis](https://crates.io/crates/bb8-redis)
+[tokio-postgres](https://github.com/sfackler/rust-postgres) | [bb8-postgres](https://crates.io/crates/bb8-postgres) (in-tree)
+[redis](https://github.com/mitsuhiko/redis-rs) | [bb8-redis](https://crates.io/crates/bb8-redis) (in-tree)
 [rsmq](https://github.com/smrchy/rsmq) | [rsmq_async](https://crates.io/crates/rsmq_async)
 [bolt-client](https://crates.io/crates/bolt-client) | [bb8-bolt](https://crates.io/crates/bb8-bolt)
 [diesel](https://crates.io/crates/diesel) | [bb8-diesel](https://crates.io/crates/bb8-diesel)
