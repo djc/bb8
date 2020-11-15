@@ -1,7 +1,7 @@
 # bb8
 
-A generic connection pool, designed for asynchronous tokio-based connections.
-This is an asynchronous [tokio](https://github.com/tokio-rs/tokio)-based version of [r2d2](https://github.com/sfackler/r2d2).
+A full-featured connection pool, designed for asynchronous connections (using
+tokio). Originally based on [r2d2](https://github.com/sfackler/r2d2).
 
 [Documentation](https://docs.rs/bb8)
 
