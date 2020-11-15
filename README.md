@@ -14,9 +14,9 @@ bb8 is agnostic to the connection type it is managing. Implementors of the
 `ManageConnection` trait provide the database-specific logic to create and
 check the health of connections.
 
-A (possibly not exhaustive) list of adaptors for different backends:
+A (possibly not exhaustive) list of adapters for different backends:
 
-Backend | Adaptor Crate
+Backend | Adapter Crate
 ------- | -------------
 [tokio-postgres](https://github.com/sfackler/rust-postgres) | [bb8-postgres](https://crates.io/crates/bb8-postgres)
 [redis](https://github.com/mitsuhiko/redis-rs) | [bb8-redis](https://crates.io/crates/bb8-redis)
