@@ -1,6 +1,6 @@
 [package]
 name = "bb8-postgres"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Dirkjan Ochtman <dirkjan@ochtman.nl>", "Kyle Huey <khuey@kylehuey.com>"]
 description = "Full-featured async (tokio-based) postgres connection pool (like r2d2)"
 license = "MIT"
@@ -17,7 +17,7 @@ edition = "2018"
 
 [dependencies]
 async-trait = "0.1"
-bb8 = { version = "0.5.0", path = "../bb8" }
+bb8 = { version = "0.6.0", path = "../bb8" }
 tokio = { version = "0.3.3", features = ["rt"] }
 tokio-postgres = "0.6"
 
