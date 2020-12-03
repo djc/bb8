@@ -2,4 +2,5 @@
 members = [
     "bb8",
     "postgres",
+    "redis",
 ]
