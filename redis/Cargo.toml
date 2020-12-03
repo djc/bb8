@@ -1,6 +1,6 @@
 [package]
 name = "bb8-redis"
-version = "0.6.0"
+version = "0.7.0"
 authors = [
     "Dirkjan Ochtman <dirkjan@ochtman.nl>",
     "Daniel Smith <smith.daniel.br@gmail.com>",
@@ -13,9 +13,9 @@ edition = "2018"
 
 [dependencies]
 async-trait = "0.1"
-bb8 = { version = "0.5.0", path = "../bb8" }
-redis = { version = "0.17", default-features = false, features = ["tokio-comp"] }
+bb8 = { version = "0.6.1", path = "../bb8" }
+redis = { version = "0.18", default-features = false, features = ["tokio-comp"] }
 
 [dev-dependencies]
 futures-util = "0.3.2"
-tokio = { version = "0.2", features = ["macros"] }
+tokio = { version = "0.3.5", features = ["macros", "rt-multi-thread"] }
