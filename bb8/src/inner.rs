@@ -6,12 +6,11 @@ use std::time::{Duration, Instant};
 
 use futures_channel::oneshot;
 use futures_util::stream::{FuturesUnordered, StreamExt};
-use parking_lot::Mutex;
 use tokio::spawn;
 use tokio::time::{interval_at, sleep, timeout, Interval};
 
 use crate::api::{Builder, ManageConnection, PooledConnection, RunError};
-use crate::internals::{Approval, ApprovalIter, Conn, PoolInternals, State};
+use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, State};
 
 pub(crate) struct PoolInner<M>
 where
@@ -25,11 +24,7 @@ where
     M: ManageConnection + Send,
 {
     pub(crate) fn new(builder: Builder<M>, manager: M) -> Self {
-        let inner = Arc::new(SharedPool {
-            statics: builder,
-            manager,
-            internals: Mutex::new(PoolInternals::default()),
-        });
+        let inner = Arc::new(SharedPool::new(builder, manager));
 
         if inner.statics.max_lifetime.is_some() || inner.statics.idle_timeout.is_some() {
             let s = Arc::downgrade(&inner);
@@ -120,7 +115,7 @@ where
         };
 
         match timeout(self.inner.statics.connection_timeout, rx).await {
-            Ok(Ok(conn)) => Ok(PooledConnection::new(self, conn)),
+            Ok(Ok(mut guard)) => Ok(PooledConnection::new(self, guard.extract())),
             _ => Err(RunError::TimedOut),
         }
     }
@@ -141,7 +136,7 @@ where
 
         let mut locked = self.inner.internals.lock();
         match conn {
-            Some(conn) => locked.put(conn, None),
+            Some(conn) => locked.put(conn, None, self.inner.clone()),
             None => {
                 let approvals = locked.dropped(1, &self.inner.statics);
                 self.spawn_replenishing_approvals(approvals);
@@ -177,7 +172,10 @@ where
             match shared.manager.connect().await {
                 Ok(conn) => {
                     let conn = Conn::new(conn);
-                    shared.internals.lock().put(conn, Some(approval));
+                    shared
+                        .internals
+                        .lock()
+                        .put(conn, Some(approval), self.inner.clone());
                     return Ok(());
                 }
                 Err(e) => {
@@ -214,17 +212,6 @@ where
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_fmt(format_args!("PoolInner({:p})", self.inner))
     }
-}
-
-/// The guts of a `Pool`.
-#[allow(missing_debug_implementations)]
-struct SharedPool<M>
-where
-    M: ManageConnection + Send,
-{
-    statics: Builder<M>,
-    manager: M,
-    internals: Mutex<PoolInternals<M>>,
 }
 
 fn schedule_reaping<M>(mut interval: Interval, weak_shared: Weak<SharedPool<M>>)
