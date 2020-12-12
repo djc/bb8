@@ -84,6 +84,8 @@ pub struct Builder<M: ManageConnection> {
     pub(crate) error_sink: Box<dyn ErrorSink<M::Error>>,
     /// The time interval used to wake up and reap connections.
     pub(crate) reaper_rate: Duration,
+    /// User-supplied trait object responsible for initializing and cleaning-up connections
+    pub(crate) connection_customizer: Box<dyn CustomizeConnection<M::Connection, M::Error>>,
     _p: PhantomData<M>,
 }
 
@@ -98,6 +100,7 @@ impl<M: ManageConnection> Default for Builder<M> {
             connection_timeout: Duration::from_secs(30),
             error_sink: Box::new(NopErrorSink),
             reaper_rate: Duration::from_secs(30),
+            connection_customizer: Box::new(NopConnectionCustomizer {}),
             _p: PhantomData,
         }
     }
@@ -204,6 +207,18 @@ impl<M: ManageConnection> Builder<M> {
         self
     }
 
+    /// Set the connection customizer which will be used to initialize and cleanup
+    /// connections created and destroyed by the pool.
+    ///
+    /// Defaults to `NopConnectionCustomizer`.
+    pub fn connection_customizer(
+        mut self,
+        connection_customizer: Box<dyn CustomizeConnection<M::Connection, M::Error>>,
+    ) -> Builder<M> {
+        self.connection_customizer = connection_customizer;
+        self
+    }
+
     fn build_inner(self, manager: M) -> Pool<M> {
         if let Some(min_idle) = self.min_idle {
             assert!(
@@ -252,6 +267,38 @@ pub trait ManageConnection: Sized + Send + Sync + 'static {
     /// Synchronously determine if the connection is no longer usable, if possible.
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
 }
+
+/// A trait which provides functionality to initialize and cleanup a connection
+#[async_trait]
+pub trait CustomizeConnection<C: Send + 'static, E: 'static>:
+    std::fmt::Debug + Send + Sync + 'static
+{
+    /// Called with connections immediately after they are returned from
+    /// `ManageConnection::connect`.
+    ///
+    /// The default implementation simply returns `Ok(())`.
+    ///
+    /// # Errors
+    ///
+    /// If this method returns an error, the connection will be discarded.
+    #[allow(unused_variables)]
+    async fn on_acquire(&self, connection: &mut C) -> Result<(), E> {
+        Ok(())
+    }
+
+    /// Called with connections when they are removed from the pool.
+    ///
+    /// The connections may be broken (as reported by `ManageConnection::is_valid` or
+    /// `ManageConnection::has_broken`), or have simply timed out.
+    ///
+    /// The default implementation does nothing.
+    #[allow(unused_variables)]
+    fn on_release(&self, connection: &mut C) {}
+}
+
+#[derive(Copy, Clone, Debug)]
+struct NopConnectionCustomizer;
+impl<C: Send + 'static, E: 'static> CustomizeConnection<C, E> for NopConnectionCustomizer {}
 
 /// A smart pointer wrapping a connection.
 pub struct PooledConnection<'a, M>

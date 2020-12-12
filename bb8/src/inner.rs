@@ -1,11 +1,15 @@
 use std::cmp::{max, min};
 use std::fmt;
 use std::future::Future;
+use std::ops::DerefMut;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use futures_channel::oneshot;
-use futures_util::stream::{FuturesUnordered, StreamExt};
+use futures_util::{
+    stream::{FuturesUnordered, StreamExt},
+    TryFutureExt,
+};
 use parking_lot::Mutex;
 use tokio::spawn;
 use tokio::time::{interval_at, sleep, timeout, Interval};
@@ -106,6 +110,7 @@ where
             match self.inner.manager.is_valid(&mut conn).await {
                 Ok(()) => return Ok(conn),
                 Err(_) => {
+                    self.on_release_connection(conn.deref_mut());
                     conn.drop_invalid();
                     continue;
                 }
@@ -126,7 +131,11 @@ where
     }
 
     pub(crate) async fn connect(&self) -> Result<M::Connection, M::Error> {
-        self.inner.manager.connect().await
+        self.inner
+            .manager
+            .connect()
+            .and_then(|conn| self.on_acquire_connection(conn))
+            .await
     }
 
     /// Return connection back in to the pool
@@ -135,6 +144,10 @@ where
             if !self.inner.manager.has_broken(&mut conn.conn) {
                 Some(conn)
             } else {
+                self.inner
+                    .statics
+                    .connection_customizer
+                    .on_release(&mut conn.conn);
                 None
             }
         });
@@ -174,7 +187,12 @@ where
         let start = Instant::now();
         let mut delay = Duration::from_secs(0);
         loop {
-            match shared.manager.connect().await {
+            let conn = shared
+                .manager
+                .connect()
+                .and_then(|conn| self.on_acquire_connection(conn))
+                .await;
+            match conn {
                 Ok(conn) => {
                     let conn = Conn::new(conn);
                     shared.internals.lock().put(conn, Some(approval));
@@ -193,6 +211,22 @@ where
                 }
             }
         }
+    }
+
+    async fn on_acquire_connection(
+        &self,
+        mut conn: M::Connection,
+    ) -> Result<M::Connection, M::Error> {
+        self.inner
+            .statics
+            .connection_customizer
+            .on_acquire(&mut conn)
+            .await
+            .map(|_| conn)
+    }
+
+    fn on_release_connection(&self, conn: &mut M::Connection) {
+        self.inner.statics.connection_customizer.on_release(conn);
     }
 }
 
