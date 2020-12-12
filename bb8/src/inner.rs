@@ -144,10 +144,7 @@ where
             if !self.inner.manager.has_broken(&mut conn.conn) {
                 Some(conn)
             } else {
-                self.inner
-                    .statics
-                    .connection_customizer
-                    .on_release(&mut conn.conn);
+                self.on_release_connection(&mut conn.conn);
                 None
             }
         });
