@@ -1,10 +1,36 @@
 use std::cmp::min;
+use std::sync::Arc;
 use std::time::Instant;
 
 use futures_channel::oneshot;
+use parking_lot::Mutex;
 
 use crate::api::{Builder, ManageConnection};
 use std::collections::VecDeque;
+
+/// The guts of a `Pool`.
+#[allow(missing_debug_implementations)]
+pub(crate) struct SharedPool<M>
+where
+    M: ManageConnection + Send,
+{
+    pub(crate) statics: Builder<M>,
+    pub(crate) manager: M,
+    pub(crate) internals: Mutex<PoolInternals<M>>,
+}
+
+impl<M> SharedPool<M>
+where
+    M: ManageConnection + Send,
+{
+    pub(crate) fn new(statics: Builder<M>, manager: M) -> Self {
+        Self {
+            statics,
+            manager,
+            internals: Mutex::new(PoolInternals::default()),
+        }
+    }
+}
 
 /// The pool data that must be protected by a lock.
 #[allow(missing_debug_implementations)]
@@ -12,7 +38,7 @@ pub(crate) struct PoolInternals<M>
 where
     M: ManageConnection,
 {
-    waiters: VecDeque<oneshot::Sender<Conn<M::Connection>>>,
+    waiters: VecDeque<oneshot::Sender<InternalsGuard<M>>>,
     conns: VecDeque<IdleConn<M::Connection>>,
     num_conns: u32,
     pending_conns: u32,
@@ -31,27 +57,31 @@ where
             .map(|idle| (idle.conn, self.wanted(config)))
     }
 
-    pub(crate) fn put(&mut self, conn: Conn<M::Connection>, approval: Option<Approval>) {
-        let mut conn = IdleConn::from(conn);
+    pub(crate) fn put(
+        &mut self,
+        conn: Conn<M::Connection>,
+        approval: Option<Approval>,
+        pool: Arc<SharedPool<M>>,
+    ) {
         if approval.is_some() {
             self.pending_conns -= 1;
             self.num_conns += 1;
         }
 
-        loop {
-            if let Some(waiter) = self.waiters.pop_front() {
-                // This connection is no longer idle, send it back out.
-                match waiter.send(conn.conn) {
-                    Ok(_) => break,
-                    // Oops, that receiver was gone. Loop and try again.
-                    Err(c) => conn.conn = c,
+        let mut guard = InternalsGuard::new(conn, pool);
+        while let Some(waiter) = self.waiters.pop_front() {
+            // This connection is no longer idle, send it back out
+            match waiter.send(guard) {
+                Ok(()) => return,
+                Err(g) => {
+                    guard = g;
                 }
-            } else {
-                // Queue it in the idle queue.
-                self.conns.push_back(conn);
-                break;
             }
         }
+
+        // Queue it in the idle queue
+        self.conns
+            .push_back(IdleConn::from(guard.conn.take().unwrap()));
     }
 
     pub(crate) fn connect_failed(&mut self, _: Approval) {
@@ -77,7 +107,7 @@ where
 
     pub(crate) fn push_waiter(
         &mut self,
-        waiter: oneshot::Sender<Conn<M::Connection>>,
+        waiter: oneshot::Sender<InternalsGuard<M>>,
         config: &Builder<M>,
     ) -> ApprovalIter {
         self.waiters.push_back(waiter);
@@ -133,6 +163,33 @@ where
             conns: VecDeque::new(),
             num_conns: 0,
             pending_conns: 0,
+        }
+    }
+}
+
+pub(crate) struct InternalsGuard<M: ManageConnection> {
+    conn: Option<Conn<M::Connection>>,
+    pool: Arc<SharedPool<M>>,
+}
+
+impl<M: ManageConnection> InternalsGuard<M> {
+    fn new(conn: Conn<M::Connection>, pool: Arc<SharedPool<M>>) -> Self {
+        Self {
+            conn: Some(conn),
+            pool,
+        }
+    }
+
+    pub(crate) fn extract(&mut self) -> Conn<M::Connection> {
+        self.conn.take().unwrap() // safe: can only be `None` after `Drop`
+    }
+}
+
+impl<M: ManageConnection> Drop for InternalsGuard<M> {
+    fn drop(&mut self) {
+        if let Some(conn) = self.conn.take() {
+            let mut locked = self.pool.internals.lock();
+            locked.put(conn, None, self.pool.clone());
         }
     }
 }
