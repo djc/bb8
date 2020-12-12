@@ -865,7 +865,7 @@ async fn test_customize_connection_release() {
         .await
         .unwrap();
 
-    // Connections go in and out of the pool with being released
+    // Connections go in and out of the pool without being released
     {
         {
             let _connection_1 = pool.get().await.unwrap();
