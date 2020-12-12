@@ -782,7 +782,7 @@ async fn test_customize_connection_acquire() {
         assert_eq!(connection_2.custom_field, 2);
     }
 
-    // Connection don't get customized again on re-use
+    // Connections don't get customized again on re-use
     let connection_1_or_2 = pool.get().await.unwrap();
     assert!(connection_1_or_2.custom_field == 1 || connection_1_or_2.custom_field == 2);
 }
