@@ -1,7 +1,6 @@
 use std::cmp::{max, min};
 use std::fmt;
 use std::future::Future;
-use std::ops::DerefMut;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -107,7 +106,6 @@ where
             match self.inner.manager.is_valid(&mut conn).await {
                 Ok(()) => return Ok(conn),
                 Err(_) => {
-                    self.on_release_connection(conn.deref_mut());
                     conn.drop_invalid();
                     continue;
                 }
@@ -139,7 +137,6 @@ where
             if !self.inner.manager.has_broken(&mut conn.conn) {
                 Some(conn)
             } else {
-                self.on_release_connection(&mut conn.conn);
                 None
             }
         });
@@ -213,10 +210,6 @@ where
             .connection_customizer
             .on_acquire(conn)
             .await
-    }
-
-    fn on_release_connection(&self, conn: &mut M::Connection) {
-        self.inner.statics.connection_customizer.on_release(conn);
     }
 }
 

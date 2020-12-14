@@ -84,7 +84,7 @@ pub struct Builder<M: ManageConnection> {
     pub(crate) error_sink: Box<dyn ErrorSink<M::Error>>,
     /// The time interval used to wake up and reap connections.
     pub(crate) reaper_rate: Duration,
-    /// User-supplied trait object responsible for initializing and cleaning-up connections
+    /// User-supplied trait object responsible for initializing connections
     pub(crate) connection_customizer: Box<dyn CustomizeConnection<M::Connection, M::Error>>,
     _p: PhantomData<M>,
 }
@@ -268,7 +268,7 @@ pub trait ManageConnection: Sized + Send + Sync + 'static {
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
 }
 
-/// A trait which provides functionality to initialize and cleanup a connection
+/// A trait which provides functionality to initialize a connection
 #[async_trait]
 pub trait CustomizeConnection<C: Send + 'static, E: 'static>:
     std::fmt::Debug + Send + Sync + 'static
@@ -285,15 +285,6 @@ pub trait CustomizeConnection<C: Send + 'static, E: 'static>:
     async fn on_acquire(&self, connection: &mut C) -> Result<(), E> {
         Ok(())
     }
-
-    /// Called with connections when they are removed from the pool.
-    ///
-    /// The connections may be broken (as reported by `ManageConnection::is_valid` or
-    /// `ManageConnection::has_broken`), or have simply timed out.
-    ///
-    /// The default implementation does nothing.
-    #[allow(unused_variables)]
-    fn on_release(&self, connection: &mut C) {}
 }
 
 #[derive(Copy, Clone, Debug)]
