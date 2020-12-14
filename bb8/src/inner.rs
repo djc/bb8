@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use futures_channel::oneshot;
 use futures_util::stream::{FuturesUnordered, StreamExt};
+use futures_util::TryFutureExt;
 use parking_lot::Mutex;
 use tokio::spawn;
 use tokio::time::{interval_at, sleep, timeout, Interval};
@@ -176,13 +177,12 @@ where
         let start = Instant::now();
         let mut delay = Duration::from_secs(0);
         loop {
-            let conn = match shared.manager.connect().await {
-                Err(e) => Err(e),
-                Ok(mut c) => match self.on_acquire_connection(&mut c).await {
-                    Err(e) => Err(e),
-                    Ok(_) => Ok(c),
-                },
-            };
+            let conn = shared
+                .manager
+                .connect()
+                .and_then(|mut c| async { self.on_acquire_connection(&mut c).await.map(|_| c) })
+                .await;
+
             match conn {
                 Ok(conn) => {
                     let conn = Conn::new(conn);
