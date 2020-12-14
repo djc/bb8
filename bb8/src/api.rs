@@ -207,8 +207,8 @@ impl<M: ManageConnection> Builder<M> {
         self
     }
 
-    /// Set the connection customizer which will be used to initialize and cleanup
-    /// connections created and destroyed by the pool.
+    /// Set the connection customizer which will be used to initialize
+    /// connections created by the pool.
     ///
     /// Defaults to `NopConnectionCustomizer`.
     pub fn connection_customizer(
