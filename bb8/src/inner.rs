@@ -6,10 +6,7 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use futures_channel::oneshot;
-use futures_util::{
-    stream::{FuturesUnordered, StreamExt},
-    TryFutureExt,
-};
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use parking_lot::Mutex;
 use tokio::spawn;
 use tokio::time::{interval_at, sleep, timeout, Interval};
@@ -131,11 +128,9 @@ where
     }
 
     pub(crate) async fn connect(&self) -> Result<M::Connection, M::Error> {
-        self.inner
-            .manager
-            .connect()
-            .and_then(|conn| self.on_acquire_connection(conn))
-            .await
+        let mut conn = self.inner.manager.connect().await?;
+        self.on_acquire_connection(&mut conn).await?;
+        Ok(conn)
     }
 
     /// Return connection back in to the pool
@@ -184,11 +179,13 @@ where
         let start = Instant::now();
         let mut delay = Duration::from_secs(0);
         loop {
-            let conn = shared
-                .manager
-                .connect()
-                .and_then(|conn| self.on_acquire_connection(conn))
-                .await;
+            let conn = match shared.manager.connect().await {
+                Err(e) => Err(e),
+                Ok(mut c) => match self.on_acquire_connection(&mut c).await {
+                    Err(e) => Err(e),
+                    Ok(_) => Ok(c),
+                },
+            };
             match conn {
                 Ok(conn) => {
                     let conn = Conn::new(conn);
@@ -210,16 +207,12 @@ where
         }
     }
 
-    async fn on_acquire_connection(
-        &self,
-        mut conn: M::Connection,
-    ) -> Result<M::Connection, M::Error> {
+    async fn on_acquire_connection(&self, conn: &mut M::Connection) -> Result<(), M::Error> {
         self.inner
             .statics
             .connection_customizer
-            .on_acquire(&mut conn)
+            .on_acquire(conn)
             .await
-            .map(|_| conn)
     }
 
     fn on_release_connection(&self, conn: &mut M::Connection) {
