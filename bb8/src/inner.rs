@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use futures_channel::oneshot;
 use futures_util::stream::{FuturesUnordered, StreamExt};
+use futures_util::TryFutureExt;
 use parking_lot::Mutex;
 use tokio::spawn;
 use tokio::time::{interval_at, sleep, timeout, Interval};
@@ -126,7 +127,9 @@ where
     }
 
     pub(crate) async fn connect(&self) -> Result<M::Connection, M::Error> {
-        self.inner.manager.connect().await
+        let mut conn = self.inner.manager.connect().await?;
+        self.on_acquire_connection(&mut conn).await?;
+        Ok(conn)
     }
 
     /// Return connection back in to the pool
@@ -174,7 +177,13 @@ where
         let start = Instant::now();
         let mut delay = Duration::from_secs(0);
         loop {
-            match shared.manager.connect().await {
+            let conn = shared
+                .manager
+                .connect()
+                .and_then(|mut c| async { self.on_acquire_connection(&mut c).await.map(|_| c) })
+                .await;
+
+            match conn {
                 Ok(conn) => {
                     let conn = Conn::new(conn);
                     shared.internals.lock().put(conn, Some(approval));
@@ -193,6 +202,14 @@ where
                 }
             }
         }
+    }
+
+    async fn on_acquire_connection(&self, conn: &mut M::Connection) -> Result<(), M::Error> {
+        self.inner
+            .statics
+            .connection_customizer
+            .on_acquire(conn)
+            .await
     }
 }
 

@@ -746,3 +746,43 @@ async fn test_guard() {
     tx4.send(()).unwrap();
     tx6.send(()).unwrap();
 }
+
+#[tokio::test]
+async fn test_customize_connection_acquire() {
+    #[derive(Debug, Default)]
+    struct Connection {
+        custom_field: usize,
+    };
+
+    #[derive(Debug, Default)]
+    struct CountingCustomizer {
+        count: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait]
+    impl<E: 'static> CustomizeConnection<Connection, E> for CountingCustomizer {
+        async fn on_acquire(&self, connection: &mut Connection) -> Result<(), E> {
+            connection.custom_field = 1 + self.count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    let pool = Pool::builder()
+        .max_size(2)
+        .connection_customizer(Box::new(CountingCustomizer::default()))
+        .build(OkManager::<Connection>::new())
+        .await
+        .unwrap();
+
+    // Each connection gets customized
+    {
+        let connection_1 = pool.get().await.unwrap();
+        assert_eq!(connection_1.custom_field, 1);
+        let connection_2 = pool.get().await.unwrap();
+        assert_eq!(connection_2.custom_field, 2);
+    }
+
+    // Connections don't get customized again on re-use
+    let connection_1_or_2 = pool.get().await.unwrap();
+    assert!(connection_1_or_2.custom_field == 1 || connection_1_or_2.custom_field == 2);
+}
