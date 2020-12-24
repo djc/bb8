@@ -18,4 +18,4 @@ redis = { version = "0.18", default-features = false, features = ["tokio-comp"] 
 
 [dev-dependencies]
 futures-util = "0.3.2"
-tokio = { version = "0.3.5", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.0.0", features = ["macros", "rt-multi-thread"] }

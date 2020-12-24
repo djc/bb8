@@ -18,9 +18,9 @@ edition = "2018"
 [dependencies]
 async-trait = "0.1"
 bb8 = { version = "0.6.0", path = "../bb8" }
-tokio = { version = "0.3.3", features = ["rt"] }
+tokio = { version = "1.0.0", features = ["rt"] }
 tokio-postgres = "0.6"
 
 [dev-dependencies]
 futures-util = "0.3.2"
-tokio = { version = "0.3.3", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.0.0", features = ["macros", "rt-multi-thread"] }
