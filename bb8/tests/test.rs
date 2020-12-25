@@ -5,7 +5,7 @@ use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::task::Poll;
 use std::time::Duration;
 use std::{error, fmt, mem};
@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use futures_channel::oneshot;
 use futures_util::future::{err, lazy, ok, pending, ready, try_join_all, FutureExt};
 use futures_util::stream::{FuturesUnordered, TryStreamExt};
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Error;
@@ -785,4 +785,122 @@ async fn test_customize_connection_acquire() {
     // Connections don't get customized again on re-use
     let connection_1_or_2 = pool.get().await.unwrap();
     assert!(connection_1_or_2.custom_field == 1 || connection_1_or_2.custom_field == 2);
+}
+
+#[tokio::test]
+async fn test_customize_connection_release() {
+    #[derive(Debug)]
+    struct CountingCustomizer {
+        num_conn_released: Arc<AtomicUsize>,
+    }
+
+    impl CountingCustomizer {
+        fn new(num_conn_released: Arc<AtomicUsize>) -> Self {
+            Self { num_conn_released }
+        }
+    }
+
+    #[async_trait]
+    impl<E: 'static> CustomizeConnection<FakeConnection, E> for CountingCustomizer {
+        async fn on_release(&self, _connection: &mut FakeConnection) -> Result<(), E> {
+            self.num_conn_released.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    struct BreakableManager<C> {
+        _c: PhantomData<C>,
+        valid: Arc<AtomicBool>,
+        broken: Arc<AtomicBool>,
+    };
+
+    impl<C> BreakableManager<C> {
+        fn new(valid: Arc<AtomicBool>, broken: Arc<AtomicBool>) -> Self {
+            Self {
+                valid,
+                broken,
+                _c: PhantomData,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl<C> ManageConnection for BreakableManager<C>
+    where
+        C: Default + Send + Sync + 'static,
+    {
+        type Connection = C;
+        type Error = Error;
+
+        async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+            Ok(Default::default())
+        }
+
+        async fn is_valid(
+            &self,
+            _conn: &mut PooledConnection<'_, Self>,
+        ) -> Result<(), Self::Error> {
+            if self.valid.load(Ordering::SeqCst) {
+                Ok(())
+            } else {
+                Err(Error)
+            }
+        }
+
+        fn has_broken(&self, _: &mut Self::Connection) -> bool {
+            self.broken.load(Ordering::SeqCst)
+        }
+    }
+
+    let valid = Arc::new(AtomicBool::new(true));
+    let broken = Arc::new(AtomicBool::new(false));
+    let manager = BreakableManager::<FakeConnection>::new(valid.clone(), broken.clone());
+
+    let num_conn_released = Arc::new(AtomicUsize::new(0));
+    let customizer = CountingCustomizer::new(num_conn_released.clone());
+
+    let pool = Pool::builder()
+        .max_size(2)
+        .connection_customizer(Box::new(customizer))
+        .build(manager)
+        .await
+        .unwrap();
+
+    // Connections go in and out of the pool without being released
+    {
+        {
+            let _connection_1 = pool.get().await.unwrap();
+            let _connection_2 = pool.get().await.unwrap();
+            assert_eq!(num_conn_released.load(Ordering::SeqCst), 0);
+        }
+        {
+            let _connection_1 = pool.get().await.unwrap();
+            let _connection_2 = pool.get().await.unwrap();
+            assert_eq!(num_conn_released.load(Ordering::SeqCst), 0);
+        }
+    }
+
+    // Invalid connections get released
+    {
+        valid.store(false, Ordering::SeqCst);
+        let _connection_1 = pool.get().await.unwrap();
+        assert_eq!(num_conn_released.load(Ordering::SeqCst), 2);
+        let _connection_2 = pool.get().await.unwrap();
+        assert_eq!(num_conn_released.load(Ordering::SeqCst), 2);
+        valid.store(true, Ordering::SeqCst);
+    }
+
+    // Broken connections get released
+    {
+        num_conn_released.store(0, Ordering::SeqCst);
+        broken.store(true, Ordering::SeqCst);
+        {
+            let _connection_1 = pool.get().await.unwrap();
+            let _connection_2 = pool.get().await.unwrap();
+            assert_eq!(num_conn_released.load(Ordering::SeqCst), 0);
+        }
+        sleep(Duration::from_millis(100)).await;
+        assert_eq!(num_conn_released.load(Ordering::SeqCst), 2);
+    }
 }

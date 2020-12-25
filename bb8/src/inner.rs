@@ -102,7 +102,9 @@ where
             match self.inner.manager.is_valid(&mut conn).await {
                 Ok(()) => return Ok(conn),
                 Err(_) => {
-                    conn.drop_invalid();
+                    self.on_release_connection(conn.extract());
+                    // Once we've extracted the connection, the `Drop` impl for `PooledConnection`
+                    // will call `put_back(None)`, so we don't need to do anything else here.
                     continue;
                 }
             }
@@ -133,6 +135,7 @@ where
             if !self.inner.manager.has_broken(&mut conn.conn) {
                 Some(conn)
             } else {
+                self.on_release_connection(conn);
                 None
             }
         });
@@ -145,6 +148,25 @@ where
                 self.spawn_replenishing_approvals(approvals);
             }
         }
+    }
+
+    fn on_release_connection(&self, mut conn: Conn<M::Connection>) {
+        if self.inner.statics.connection_customizer.is_none() {
+            return;
+        }
+
+        let pool = self.inner.clone();
+        spawn(async move {
+            let customizer = match pool.statics.connection_customizer.as_ref() {
+                Some(customizer) => customizer,
+                None => return,
+            };
+
+            let future = customizer.on_release(&mut conn.conn);
+            if let Err(e) = future.await {
+                pool.statics.error_sink.sink(e);
+            }
+        });
     }
 
     /// Returns information about the current state of the pool.
