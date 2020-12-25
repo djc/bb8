@@ -85,7 +85,7 @@ pub struct Builder<M: ManageConnection> {
     /// The time interval used to wake up and reap connections.
     pub(crate) reaper_rate: Duration,
     /// User-supplied trait object responsible for initializing connections
-    pub(crate) connection_customizer: Box<dyn CustomizeConnection<M::Connection, M::Error>>,
+    pub(crate) connection_customizer: Option<Box<dyn CustomizeConnection<M::Connection, M::Error>>>,
     _p: PhantomData<M>,
 }
 
@@ -100,7 +100,7 @@ impl<M: ManageConnection> Default for Builder<M> {
             connection_timeout: Duration::from_secs(30),
             error_sink: Box::new(NopErrorSink),
             reaper_rate: Duration::from_secs(30),
-            connection_customizer: Box::new(NopConnectionCustomizer {}),
+            connection_customizer: None,
             _p: PhantomData,
         }
     }
@@ -207,15 +207,12 @@ impl<M: ManageConnection> Builder<M> {
         self
     }
 
-    /// Set the connection customizer which will be used to initialize
-    /// connections created by the pool.
-    ///
-    /// Defaults to `NopConnectionCustomizer`.
+    /// Set the connection customizer to customize newly checked out connections
     pub fn connection_customizer(
         mut self,
         connection_customizer: Box<dyn CustomizeConnection<M::Connection, M::Error>>,
     ) -> Builder<M> {
-        self.connection_customizer = connection_customizer;
+        self.connection_customizer = Some(connection_customizer);
         self
     }
 
@@ -286,10 +283,6 @@ pub trait CustomizeConnection<C: Send + 'static, E: 'static>:
         Ok(())
     }
 }
-
-#[derive(Copy, Clone, Debug)]
-struct NopConnectionCustomizer;
-impl<C: Send + 'static, E: 'static> CustomizeConnection<C, E> for NopConnectionCustomizer {}
 
 /// A smart pointer wrapping a connection.
 pub struct PooledConnection<'a, M>

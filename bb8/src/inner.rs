@@ -203,11 +203,10 @@ where
     }
 
     async fn on_acquire_connection(&self, conn: &mut M::Connection) -> Result<(), M::Error> {
-        self.inner
-            .statics
-            .connection_customizer
-            .on_acquire(conn)
-            .await
+        match self.inner.statics.connection_customizer.as_ref() {
+            Some(customizer) => customizer.on_acquire(conn).await,
+            None => Ok(()),
+        }
     }
 }
 
