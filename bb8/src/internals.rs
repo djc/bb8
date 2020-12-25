@@ -168,12 +168,12 @@ where
 }
 
 pub(crate) struct InternalsGuard<M: ManageConnection> {
-    conn: Option<Conn<M::Connection>>,
-    pool: Arc<SharedPool<M>>,
+    pub(crate) conn: Option<Conn<M::Connection>>,
+    pub(crate) pool: Arc<SharedPool<M>>,
 }
 
 impl<M: ManageConnection> InternalsGuard<M> {
-    fn new(conn: Conn<M::Connection>, pool: Arc<SharedPool<M>>) -> Self {
+    pub(crate) fn new(conn: Conn<M::Connection>, pool: Arc<SharedPool<M>>) -> Self {
         Self {
             conn: Some(conn),
             pool,
