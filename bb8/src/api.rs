@@ -273,13 +273,9 @@ pub trait CustomizeConnection<C: Send + 'static, E: 'static>:
     /// Called with connections immediately after they are returned from
     /// `ManageConnection::connect`.
     ///
-    /// The default implementation simply returns `Ok(())`.
-    ///
-    /// # Errors
-    ///
-    /// If this method returns an error, the connection will be discarded.
-    #[allow(unused_variables)]
-    async fn on_acquire(&self, connection: &mut C) -> Result<(), E> {
+    /// The default implementation simply returns `Ok(())`. If this method returns an
+    /// error, it will be forwarded to the configured error sink.
+    async fn on_acquire(&self, _connection: &mut C) -> Result<(), E> {
         Ok(())
     }
 }
