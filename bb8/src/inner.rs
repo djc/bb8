@@ -101,7 +101,8 @@ where
 
             match self.inner.manager.is_valid(&mut conn).await {
                 Ok(()) => return Ok(conn),
-                Err(_) => {
+                Err(e) => {
+                    self.inner.statics.error_sink.sink(e);
                     conn.drop_invalid();
                     continue;
                 }
