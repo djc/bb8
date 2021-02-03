@@ -13,9 +13,9 @@ edition = "2018"
 
 [dependencies]
 async-trait = "0.1"
-bb8 = { version = "0.7", path = "../bb8" }
+bb8 = { version = "0.8", path = "../bb8" }
 redis = { version = "0.19", default-features = false, features = ["tokio-comp"] }
 
 [dev-dependencies]
 futures-util = "0.3.2"
-tokio = { version = "1.0.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.1.1", features = ["macros", "rt-multi-thread"] }
