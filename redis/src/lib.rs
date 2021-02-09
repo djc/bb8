@@ -74,10 +74,10 @@ impl bb8::ManageConnection for RedisConnectionManager {
         conn: &mut bb8::PooledConnection<'_, Self>,
     ) -> Result<(), Self::Error> {
         let pong: String = redis::cmd("PING").query_async(conn.deref_mut()).await?;
-        if pong.as_str() != "PONG" {
-            return Err((ErrorKind::ResponseError, "ping request").into());
+        match pong.as_str() {
+            "PONG" => Ok(()),
+            _ => Err((ErrorKind::ResponseError, "ping request").into()),
         }
-        Ok(())
     }
 
     fn has_broken(&self, _: &mut Self::Connection) -> bool {
