@@ -41,7 +41,7 @@ pub use bb8;
 pub use redis;
 
 use async_trait::async_trait;
-use redis::aio::Connection;
+use redis::{aio::Connection, ErrorKind};
 use redis::{Client, IntoConnectionInfo, RedisError};
 
 /// A `bb8::ManageConnection` for `redis::Client::get_async_connection`.
@@ -73,7 +73,11 @@ impl bb8::ManageConnection for RedisConnectionManager {
         &self,
         conn: &mut bb8::PooledConnection<'_, Self>,
     ) -> Result<(), Self::Error> {
-        redis::cmd("PING").query_async(conn.deref_mut()).await
+        let pong: String = redis::cmd("PING").query_async(conn.deref_mut()).await?;
+        if pong.as_str() != "PONG" {
+            return Err((ErrorKind::ResponseError, "ping request").into());
+        }
+        Ok(())
     }
 
     fn has_broken(&self, _: &mut Self::Connection) -> bool {
