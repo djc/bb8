@@ -25,7 +25,7 @@ impl fmt::Display for BuilderError {
 impl error::Error for BuilderError {}
 
 /// A builder for a postgres connection manager.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct PostgresConnectionManagerBuilder<Tls>
 where
     Tls: MakeTlsConnect<Socket>,
