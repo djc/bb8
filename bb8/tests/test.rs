@@ -752,7 +752,7 @@ async fn test_customize_connection_acquire() {
     #[derive(Debug, Default)]
     struct Connection {
         custom_field: usize,
-    };
+    }
 
     #[derive(Debug, Default)]
     struct CountingCustomizer {
