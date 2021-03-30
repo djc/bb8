@@ -255,7 +255,7 @@ pub trait ManageConnection: Sized + Send + Sync + 'static {
     /// The connection type this manager deals with.
     type Connection: Send + 'static;
     /// The error type returned by `Connection`s.
-    type Error: fmt::Debug + Send + 'static;
+    type Error: fmt::Debug + Send + Clone + 'static;
 
     /// Attempts to create a new connection.
     async fn connect(&self) -> Result<Self::Connection, Self::Error>;
@@ -263,6 +263,14 @@ pub trait ManageConnection: Sized + Send + Sync + 'static {
     async fn is_valid(&self, conn: &mut PooledConnection<'_, Self>) -> Result<(), Self::Error>;
     /// Synchronously determine if the connection is no longer usable, if possible.
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
+    /// If `connect` returns an error, this function will be called. If it
+    /// returns false, then the call to `pool.get` will return `err` without any
+    /// attempt to retry. This function returns true by default, and should only
+    /// be implemented for cases where there is a decent chance of providing
+    /// invalid connection configuration.
+    fn should_retry(&self, _err: &Self::Error) -> bool {
+        true
+    }
 }
 
 /// A trait which provides functionality to initialize a connection

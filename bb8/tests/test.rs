@@ -1,6 +1,5 @@
 use bb8::*;
 
-use std::future::Future;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -9,6 +8,7 @@ use std::sync::Mutex;
 use std::task::Poll;
 use std::time::Duration;
 use std::{error, fmt, mem};
+use std::{future::Future, sync::Arc};
 
 use async_trait::async_trait;
 use futures_channel::oneshot;
@@ -16,7 +16,7 @@ use futures_util::future::{err, lazy, ok, pending, ready, try_join_all, FutureEx
 use futures_util::stream::{FuturesUnordered, TryStreamExt};
 use tokio::time::timeout;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error;
 
 impl fmt::Display for Error {
@@ -785,4 +785,77 @@ async fn test_customize_connection_acquire() {
     // Connections don't get customized again on re-use
     let connection_1_or_2 = pool.get().await.unwrap();
     assert!(connection_1_or_2.custom_field == 1 || connection_1_or_2.custom_field == 2);
+}
+
+/// Tests that some errors will never be retried, e.g. due to misconfiguring the
+/// endpoint or credentials. See #102 for why this was introduced.
+#[tokio::test]
+async fn test_invalid_connections() {
+    struct Connection;
+    struct Handler;
+
+    #[async_trait]
+    impl ManageConnection for Handler {
+        type Connection = Connection;
+        type Error = Error;
+
+        async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+            Err(Error)
+        }
+
+        fn should_retry(&self, _err: &Self::Error) -> bool {
+            false
+        }
+
+        // The rest of the methods are not needed! `unreachable` is desirable
+        // because it will fail the test if we ever get a successfull connection
+        // (should be impossible).
+
+        async fn is_valid(
+            &self,
+            _conn: &mut PooledConnection<'_, Self>,
+        ) -> Result<(), Self::Error> {
+            unreachable!()
+        }
+
+        fn has_broken(&self, _: &mut Self::Connection) -> bool {
+            unreachable!()
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct Sink(Arc<Mutex<usize>>);
+
+    impl ErrorSink<Error> for Sink {
+        fn sink(&self, _: Error) {
+            let mut count = self.0.lock().unwrap();
+            *count += 1;
+        }
+
+        fn boxed_clone(&self) -> Box<dyn ErrorSink<Error>> {
+            Box::new(self.clone())
+        }
+    }
+
+    let sink = Sink(Arc::new(Mutex::new(0)));
+
+    let pool = Pool::builder()
+        .max_size(1)
+        .error_sink(sink.boxed_clone())
+        .build(Handler)
+        .await
+        .unwrap();
+
+    // Before the notion of unretriable errors was introduced, `pool.get` would
+    // retry the connection attempt until timeout, and would then return a
+    // `RunError::TimedOut`.
+    match pool.get().await {
+        Err(RunError::User(_)) => {}
+        _ => panic!("expected a connect error"),
+    };
+
+    // Not only does `get` return the `Err`, the `ErrorSink` also gets a copy
+    // for consistency.
+    let sunk = *sink.0.lock().unwrap();
+    assert_eq!(1, sunk);
 }
