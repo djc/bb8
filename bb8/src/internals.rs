@@ -38,7 +38,7 @@ pub(crate) struct PoolInternals<M>
 where
     M: ManageConnection,
 {
-    waiters: VecDeque<oneshot::Sender<InternalsGuard<M>>>,
+    waiters: VecDeque<oneshot::Sender<Result<InternalsGuard<M>, M::Error>>>,
     conns: VecDeque<IdleConn<M::Connection>>,
     num_conns: u32,
     pending_conns: u32,
@@ -68,7 +68,7 @@ where
             self.num_conns += 1;
         }
 
-        let mut guard = InternalsGuard::new(conn, pool);
+        let mut guard = Ok(InternalsGuard::new(conn, pool));
         while let Some(waiter) = self.waiters.pop_front() {
             // This connection is no longer idle, send it back out
             match waiter.send(guard) {
@@ -80,12 +80,20 @@ where
         }
 
         // Queue it in the idle queue
-        self.conns
-            .push_back(IdleConn::from(guard.conn.take().unwrap()));
+        if let Ok(mut g) = guard {
+            self.conns.push_back(IdleConn::from(g.conn.take().unwrap()));
+        }
     }
 
     pub(crate) fn connect_failed(&mut self, _: Approval) {
         self.pending_conns -= 1;
+    }
+
+    pub(crate) fn connect_failed_catastrophically(&mut self, err: M::Error, _: Approval) {
+        self.pending_conns -= 1;
+        if let Some(waiter) = self.waiters.pop_front() {
+            let _ = waiter.send(Err(err));
+        }
     }
 
     pub(crate) fn dropped(&mut self, num: u32, config: &Builder<M>) -> ApprovalIter {
@@ -107,7 +115,7 @@ where
 
     pub(crate) fn push_waiter(
         &mut self,
-        waiter: oneshot::Sender<InternalsGuard<M>>,
+        waiter: oneshot::Sender<Result<InternalsGuard<M>, M::Error>>,
         config: &Builder<M>,
     ) -> ApprovalIter {
         self.waiters.push_back(waiter);

@@ -117,7 +117,8 @@ where
         };
 
         match timeout(self.inner.statics.connection_timeout, rx).await {
-            Ok(Ok(mut guard)) => Ok(PooledConnection::new(self, guard.extract())),
+            Ok(Ok(Ok(mut guard))) => Ok(PooledConnection::new(self, guard.extract())),
+            Ok(Ok(Err(e))) => Err(RunError::User(e)),
             _ => Err(RunError::TimedOut),
         }
     }
@@ -189,9 +190,19 @@ where
                     return Ok(());
                 }
                 Err(e) => {
-                    if Instant::now() - start > self.inner.statics.connection_timeout {
+                    // If the connection attempt failed, we only retry if there
+                    // is still time on the clock. However, some errors should
+                    // never be retried.
+                    let should_retry = shared.manager.should_retry(&e);
+                    let timedout = Instant::now() - start > self.inner.statics.connection_timeout;
+
+                    if !should_retry || timedout {
                         let mut locked = shared.internals.lock();
-                        locked.connect_failed(approval);
+                        if should_retry {
+                            locked.connect_failed(approval);
+                        } else {
+                            locked.connect_failed_catastrophically(e.clone(), approval);
+                        }
                         return Err(e);
                     } else {
                         delay = max(Duration::from_millis(200), delay);
