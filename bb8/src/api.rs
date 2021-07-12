@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::error;
 use std::fmt;
 use std::marker::PhantomData;
@@ -52,6 +53,18 @@ impl<M: ManageConnection> Pool<M> {
     /// Retrieves a connection from the pool.
     pub async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
         self.inner.get().await
+    }
+
+    /// Retrieves an owned connection from the pool.
+    ///
+    /// [`Pool::get`] should be preferred for situations where an owned
+    /// connection type isn't necessary.
+    ///
+    /// This contains a reference to the pool and will prevent the it from being
+    /// dropped, while an owned connection is alive. So if an owned connection
+    /// is leaked, the pool will never be shutdown.
+    pub async fn get_owned(&self) -> Result<PooledConnection<'static, M>, RunError<M::Error>> {
+        self.inner.get_owned().await
     }
 
     /// Get a new dedicated connection that will not be managed by the pool.
@@ -285,7 +298,7 @@ pub struct PooledConnection<'a, M>
 where
     M: ManageConnection,
 {
-    pool: &'a PoolInner<M>,
+    pool: Cow<'a, PoolInner<M>>,
     conn: Option<Conn<M::Connection>>,
 }
 
@@ -295,13 +308,25 @@ where
 {
     pub(crate) fn new(pool: &'a PoolInner<M>, conn: Conn<M::Connection>) -> Self {
         Self {
-            pool,
+            pool: Cow::Borrowed(pool),
             conn: Some(conn),
         }
     }
 
     pub(crate) fn drop_invalid(mut self) {
         let _ = self.conn.take();
+    }
+}
+
+impl<M> PooledConnection<'static, M>
+where
+    M: ManageConnection,
+{
+    pub(crate) fn new_owned(pool: PoolInner<M>, conn: Conn<M::Connection>) -> Self {
+        Self {
+            pool: Cow::Owned(pool),
+            conn: Some(conn),
+        }
     }
 }
 
@@ -340,7 +365,14 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        self.pool.put_back(self.conn.take());
+        match &self.pool {
+            Cow::Borrowed(pool) => {
+                pool.put_back(self.conn.take());
+            }
+            Cow::Owned(pool) => {
+                pool.put_back(self.conn.take());
+            }
+        }
     }
 }
 
