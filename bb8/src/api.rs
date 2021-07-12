@@ -365,14 +365,7 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        match &self.pool {
-            Cow::Borrowed(pool) => {
-                pool.put_back(self.conn.take());
-            }
-            Cow::Owned(pool) => {
-                pool.put_back(self.conn.take());
-            }
-        }
+        self.pool.as_ref().put_back(self.conn.take())
     }
 }
 
