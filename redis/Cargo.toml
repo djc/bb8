@@ -17,5 +17,5 @@ bb8 = { version = "0.7", path = "../bb8" }
 redis = { version = "0.21", default-features = false, features = ["tokio-comp"] }
 
 [dev-dependencies]
-futures-util = "0.3.2"
+futures-util = "0.3.15"
 tokio = { version = "1.0.0", features = ["macros", "rt-multi-thread"] }
