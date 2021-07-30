@@ -102,7 +102,7 @@ where
             0
         };
 
-        self.approvals(&config, wanted)
+        self.approvals(config, wanted)
     }
 
     pub(crate) fn push_waiter(
