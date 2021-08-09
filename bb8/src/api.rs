@@ -55,14 +55,10 @@ impl<M: ManageConnection> Pool<M> {
         self.inner.get().await
     }
 
-    /// Retrieves an owned connection from the pool.
+    /// Retrieves an owned connection from the pool
     ///
-    /// [`Pool::get`] should be preferred for situations where an owned
-    /// connection type isn't necessary.
-    ///
-    /// This contains a reference to the pool and will prevent the it from being
-    /// dropped, while an owned connection is alive. So if an owned connection
-    /// is leaked, the pool will never be shutdown.
+    /// Using an owning `PooledConnection` makes it easier to leak the connection pool. Therefore, [`Pool::get`] 
+    /// (which stores a lifetime-bound reference to the pool) should be preferred whenever possible.
     pub async fn get_owned(&self) -> Result<PooledConnection<'static, M>, RunError<M::Error>> {
         self.inner.get_owned().await
     }
