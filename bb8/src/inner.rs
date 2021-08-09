@@ -83,14 +83,14 @@ where
     }
 
     pub(crate) async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
-        self.make_pool(|this, conn| PooledConnection::new(this, conn))
+        self.make_pooled(|this, conn| PooledConnection::new(this, conn))
             .await
     }
 
     pub(crate) async fn get_owned(
         &self,
     ) -> Result<PooledConnection<'static, M>, RunError<M::Error>> {
-        self.make_pool(|this, conn| {
+        self.make_pooled(|this, conn| {
             let pool = PoolInner {
                 inner: Arc::clone(&this.inner),
             };
@@ -99,7 +99,7 @@ where
         .await
     }
 
-    pub(crate) async fn make_pool<'a, 'b, F>(
+    pub(crate) async fn make_pooled<'a, 'b, F>(
         &'a self,
         make_pool: F,
     ) -> Result<PooledConnection<'b, M>, RunError<M::Error>>
