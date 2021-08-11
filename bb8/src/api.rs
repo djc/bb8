@@ -57,7 +57,7 @@ impl<M: ManageConnection> Pool<M> {
 
     /// Retrieves an owned connection from the pool
     ///
-    /// Using an owning `PooledConnection` makes it easier to leak the connection pool. Therefore, [`Pool::get`] 
+    /// Using an owning `PooledConnection` makes it easier to leak the connection pool. Therefore, [`Pool::get`]
     /// (which stores a lifetime-bound reference to the pool) should be preferred whenever possible.
     pub async fn get_owned(&self) -> Result<PooledConnection<'static, M>, RunError<M::Error>> {
         self.inner.get_owned().await
