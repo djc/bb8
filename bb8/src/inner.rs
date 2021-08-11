@@ -101,7 +101,7 @@ where
 
     pub(crate) async fn make_pooled<'a, 'b, F>(
         &'a self,
-        make_pool: F,
+        make_pooled_conn: F,
     ) -> Result<PooledConnection<'b, M>, RunError<M::Error>>
     where
         F: Fn(&'a Self, Conn<M::Connection>) -> PooledConnection<'b, M>,
@@ -112,7 +112,7 @@ where
                 match locked.pop(&self.inner.statics) {
                     Some((conn, approvals)) => {
                         self.spawn_replenishing_approvals(approvals);
-                        make_pool(self, conn)
+                        make_pooled_conn(self, conn)
                     }
                     None => break,
                 }
@@ -140,7 +140,7 @@ where
         };
 
         match timeout(self.inner.statics.connection_timeout, rx).await {
-            Ok(Ok(mut guard)) => Ok(make_pool(self, guard.extract())),
+            Ok(Ok(mut guard)) => Ok(make_pooled_conn(self, guard.extract())),
             _ => Err(RunError::TimedOut),
         }
     }
