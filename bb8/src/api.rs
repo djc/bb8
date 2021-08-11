@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::error;
 use std::fmt;
 use std::marker::PhantomData;
@@ -52,6 +53,14 @@ impl<M: ManageConnection> Pool<M> {
     /// Retrieves a connection from the pool.
     pub async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
         self.inner.get().await
+    }
+
+    /// Retrieves an owned connection from the pool
+    ///
+    /// Using an owning `PooledConnection` makes it easier to leak the connection pool. Therefore, [`Pool::get`] 
+    /// (which stores a lifetime-bound reference to the pool) should be preferred whenever possible.
+    pub async fn get_owned(&self) -> Result<PooledConnection<'static, M>, RunError<M::Error>> {
+        self.inner.get_owned().await
     }
 
     /// Get a new dedicated connection that will not be managed by the pool.
@@ -285,7 +294,7 @@ pub struct PooledConnection<'a, M>
 where
     M: ManageConnection,
 {
-    pool: &'a PoolInner<M>,
+    pool: Cow<'a, PoolInner<M>>,
     conn: Option<Conn<M::Connection>>,
 }
 
@@ -295,13 +304,25 @@ where
 {
     pub(crate) fn new(pool: &'a PoolInner<M>, conn: Conn<M::Connection>) -> Self {
         Self {
-            pool,
+            pool: Cow::Borrowed(pool),
             conn: Some(conn),
         }
     }
 
     pub(crate) fn drop_invalid(mut self) {
         let _ = self.conn.take();
+    }
+}
+
+impl<M> PooledConnection<'static, M>
+where
+    M: ManageConnection,
+{
+    pub(crate) fn new_owned(pool: PoolInner<M>, conn: Conn<M::Connection>) -> Self {
+        Self {
+            pool: Cow::Owned(pool),
+            conn: Some(conn),
+        }
     }
 }
 
@@ -340,7 +361,7 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        self.pool.put_back(self.conn.take());
+        self.pool.as_ref().put_back(self.conn.take())
     }
 }
 

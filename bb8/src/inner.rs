@@ -83,13 +83,36 @@ where
     }
 
     pub(crate) async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
+        self.make_pooled(|this, conn| PooledConnection::new(this, conn))
+            .await
+    }
+
+    pub(crate) async fn get_owned(
+        &self,
+    ) -> Result<PooledConnection<'static, M>, RunError<M::Error>> {
+        self.make_pooled(|this, conn| {
+            let pool = PoolInner {
+                inner: Arc::clone(&this.inner),
+            };
+            PooledConnection::new_owned(pool, conn)
+        })
+        .await
+    }
+
+    pub(crate) async fn make_pooled<'a, 'b, F>(
+        &'a self,
+        make_pool: F,
+    ) -> Result<PooledConnection<'b, M>, RunError<M::Error>>
+    where
+        F: Fn(&'a Self, Conn<M::Connection>) -> PooledConnection<'b, M>,
+    {
         loop {
             let mut conn = {
                 let mut locked = self.inner.internals.lock();
                 match locked.pop(&self.inner.statics) {
                     Some((conn, approvals)) => {
                         self.spawn_replenishing_approvals(approvals);
-                        PooledConnection::new(self, conn)
+                        make_pool(self, conn)
                     }
                     None => break,
                 }
@@ -117,7 +140,7 @@ where
         };
 
         match timeout(self.inner.statics.connection_timeout, rx).await {
-            Ok(Ok(mut guard)) => Ok(PooledConnection::new(self, guard.extract())),
+            Ok(Ok(mut guard)) => Ok(make_pool(self, guard.extract())),
             _ => Err(RunError::TimedOut),
         }
     }
