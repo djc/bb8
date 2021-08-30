@@ -4,7 +4,7 @@ version = "0.7.0"
 authors = ["Dirkjan Ochtman <dirkjan@ochtman.nl>", "Kyle Huey <khuey@kylehuey.com>"]
 description = "Full-featured async (tokio-based) postgres connection pool (like r2d2)"
 license = "MIT"
-repository = "https://github.com/khuey/bb8"
+repository = "https://github.com/djc/bb8"
 edition = "2018"
 
 [features]

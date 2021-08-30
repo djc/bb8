@@ -8,7 +8,7 @@ authors = [
 ]
 description = "Full-featured async (tokio-based) redis connection pool (like r2d2)"
 license = "MIT"
-repository = "https://github.com/khuey/bb8"
+repository = "https://github.com/djc/bb8"
 edition = "2018"
 
 [dependencies]
