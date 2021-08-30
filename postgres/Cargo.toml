@@ -1,7 +1,6 @@
 [package]
 name = "bb8-postgres"
 version = "0.7.0"
-authors = ["Dirkjan Ochtman <dirkjan@ochtman.nl>", "Kyle Huey <khuey@kylehuey.com>"]
 description = "Full-featured async (tokio-based) postgres connection pool (like r2d2)"
 license = "MIT"
 repository = "https://github.com/djc/bb8"
