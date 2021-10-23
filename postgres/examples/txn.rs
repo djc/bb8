@@ -13,30 +13,13 @@ async fn main() {
     )
     .unwrap();
 
-    let pool = match Pool::builder().build(pg_mgr).await {
-        Ok(pool) => pool,
-        Err(e) => panic!("builder error: {:?}", e),
-    };
+    let pool = Pool::builder().build(pg_mgr).await.unwrap();
+    let mut connection = pool.get().await.unwrap();
+    let transaction = connection.transaction().await.unwrap();
 
-    let connection = pool.get().await.unwrap();
-    connection.simple_query("BEGIN").await.unwrap();
+    let statement = transaction.prepare("SELECT 1").await.unwrap();
+    let row = transaction.query_one(&statement, &[]).await.unwrap();
+    println!("result: {}", row.get::<usize, i32>(0));
 
-    let err = match connection.prepare("SELECT 1").await {
-        Ok(select) => match connection.query_one(&select, &[]).await {
-            Ok(row) => {
-                println!("result: {}", row.get::<usize, i32>(0));
-                None
-            }
-            Err(e) => Some(e),
-        },
-        Err(e) => Some(e),
-    };
-
-    let finalize_query = match &err {
-        None => "COMMIT",
-        Some(_) => "ROLLBACK",
-    };
-
-    let _ = connection.simple_query(finalize_query).await;
-    err.unwrap();
+    transaction.commit().await.unwrap();
 }
