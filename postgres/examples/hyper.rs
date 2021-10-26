@@ -1,8 +1,10 @@
-use bb8::Pool;
+use std::convert::Infallible;
+
+use bb8::{Pool, RunError};
 use bb8_postgres::PostgresConnectionManager;
-use futures_util::future::{FutureExt, TryFutureExt};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Error, Response, Server};
+use tokio_postgres::NoTls;
 
 // Select some static data from a Postgres DB and return it via hyper.
 //
@@ -31,32 +33,29 @@ async fn main() {
                     let pool = pool.clone();
                     async move {
                         println!("Got request");
-                        Ok::<_, Error>(
-                            pool.get()
-                                .and_then(|connection| async {
-                                    let select = connection.prepare("SELECT 1").await?;
-                                    Ok((connection, select))
-                                })
-                                .and_then(|(connection, select)| async move {
-                                    let row = connection.query_one(&select, &[]).await?;
-                                    Ok(row)
-                                })
-                                .map(|result| match result {
-                                    Ok(row) => {
-                                        let v = row.get::<usize, i32>(0);
-                                        println!("Sending success response");
-                                        Response::new(Body::from(format!("Got results {:?}", v)))
-                                    }
-                                    Err(e) => {
-                                        println!("Sending error response");
-                                        Response::new(Body::from(format!("Internal error {:?}", e)))
-                                    }
-                                })
-                                .await,
-                        )
+                        Ok::<_, Infallible>(match handler(pool).await {
+                            Ok(rsp) => {
+                                println!("Sending success response");
+                                rsp
+                            }
+                            Err(e) => {
+                                println!("Sending error response");
+                                Response::new(Body::from(format!("Internal error {:?}", e)))
+                            }
+                        })
                     }
                 }))
             }
         }))
         .await;
+}
+
+async fn handler(
+    pool: Pool<PostgresConnectionManager<NoTls>>,
+) -> Result<Response<Body>, RunError<tokio_postgres::Error>> {
+    let conn = pool.get().await?;
+    let stmt = conn.prepare("SELECT 1").await?;
+    let row = conn.query_one(&stmt, &[]).await?;
+    let v = row.get::<usize, i32>(0);
+    Ok(Response::new(Body::from(format!("Got results {:?}", v))))
 }
