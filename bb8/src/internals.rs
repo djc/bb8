@@ -114,7 +114,7 @@ where
         self.approvals(config, 1)
     }
 
-    pub(crate) fn approvals(&mut self, config: &Builder<M>, num: u32) -> ApprovalIter {
+    fn approvals(&mut self, config: &Builder<M>, num: u32) -> ApprovalIter {
         let current = self.num_conns + self.pending_conns;
         let allowed = if current < config.max_size {
             config.max_size - current
