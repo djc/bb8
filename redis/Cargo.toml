@@ -6,10 +6,15 @@ license = "MIT"
 repository = "https://github.com/djc/bb8"
 edition = "2018"
 
+[features]
+multiplexed-connections = []
+
 [dependencies]
 async-trait = "0.1"
 bb8 = { version = "0.7", path = "../bb8" }
-redis = { version = "0.21.1", default-features = false, features = ["tokio-comp"] }
+redis = { version = "0.21.1", default-features = false, features = [
+    "tokio-comp",
+] }
 
 [dev-dependencies]
 futures-util = "0.3.15"
