@@ -41,7 +41,11 @@ pub use bb8;
 pub use redis;
 
 use async_trait::async_trait;
-use redis::{aio::Connection, ErrorKind};
+#[cfg(not(feature = "multiplexed-connections"))]
+use redis::aio::Connection;
+#[cfg(feature = "multiplexed-connections")]
+use redis::aio::MultiplexedConnection;
+use redis::ErrorKind;
 use redis::{Client, IntoConnectionInfo, RedisError};
 
 /// A `bb8::ManageConnection` for `redis::Client::get_async_connection`.
@@ -62,11 +66,19 @@ impl RedisConnectionManager {
 
 #[async_trait]
 impl bb8::ManageConnection for RedisConnectionManager {
+    #[cfg(not(feature = "multiplexed-connections"))]
     type Connection = Connection;
+    #[cfg(feature = "multiplexed-connections")]
+    type Connection = MultiplexedConnection;
+
     type Error = RedisError;
 
     async fn connect(&self) -> Result<Self::Connection, Self::Error> {
-        self.client.get_async_connection().await
+        #[cfg(not(feature = "multiplexed-connections"))]
+        return self.client.get_async_connection().await;
+
+        #[cfg(feature = "multiplexed-connections")]
+        self.client.get_multiplexed_async_connection().await
     }
 
     async fn is_valid(
