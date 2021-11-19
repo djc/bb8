@@ -35,8 +35,6 @@
 #![allow(clippy::needless_doctest_main)]
 #![deny(missing_docs, missing_debug_implementations)]
 
-use std::ops::DerefMut;
-
 pub use bb8;
 pub use redis;
 
@@ -69,11 +67,8 @@ impl bb8::ManageConnection for RedisConnectionManager {
         self.client.get_async_connection().await
     }
 
-    async fn is_valid(
-        &self,
-        conn: &mut bb8::PooledConnection<'_, Self>,
-    ) -> Result<(), Self::Error> {
-        let pong: String = redis::cmd("PING").query_async(conn.deref_mut()).await?;
+    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
+        let pong: String = redis::cmd("PING").query_async(conn).await?;
         match pong.as_str() {
             "PONG" => Ok(()),
             _ => Err((ErrorKind::ResponseError, "ping request").into()),
