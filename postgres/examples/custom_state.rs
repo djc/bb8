@@ -114,10 +114,7 @@ where
         Ok(CustomPostgresConnection::new(conn))
     }
 
-    async fn is_valid(
-        &self,
-        conn: &mut bb8::PooledConnection<'_, Self>,
-    ) -> Result<(), Self::Error> {
+    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
         conn.simple_query("").await.map(|_| ())
     }
 

@@ -56,7 +56,7 @@ where
         Ok(Default::default())
     }
 
-    async fn is_valid(&self, _conn: &mut PooledConnection<'_, Self>) -> Result<(), Self::Error> {
+    async fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -97,7 +97,7 @@ where
         }
     }
 
-    async fn is_valid(&self, _conn: &mut PooledConnection<'_, Self>) -> Result<(), Self::Error> {
+    async fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -233,10 +233,7 @@ async fn test_drop_on_broken() {
             Ok(Default::default())
         }
 
-        async fn is_valid(
-            &self,
-            _conn: &mut PooledConnection<'_, Self>,
-        ) -> Result<(), Self::Error> {
+        async fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
             Ok(())
         }
 
@@ -327,10 +324,7 @@ async fn test_now_invalid() {
             }
         }
 
-        async fn is_valid(
-            &self,
-            _conn: &mut PooledConnection<'_, Self>,
-        ) -> Result<(), Self::Error> {
+        async fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
             println!("Called is_valid");
             if INVALID.load(Ordering::SeqCst) {
                 println!("Not");
@@ -536,10 +530,7 @@ async fn test_conns_drop_on_pool_drop() {
             Ok(Connection)
         }
 
-        async fn is_valid(
-            &self,
-            _conn: &mut PooledConnection<'_, Self>,
-        ) -> Result<(), Self::Error> {
+        async fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
             Ok(())
         }
 
@@ -591,10 +582,7 @@ async fn test_retry() {
             Ok(Connection)
         }
 
-        async fn is_valid(
-            &self,
-            _conn: &mut PooledConnection<'_, Self>,
-        ) -> Result<(), Self::Error> {
+        async fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
             // only fail once so the retry should work
             if FAILED_ONCE.load(Ordering::SeqCst) {
                 Ok(())
@@ -646,10 +634,7 @@ async fn test_conn_fail_once() {
             }
         }
 
-        async fn is_valid(
-            &self,
-            _conn: &mut PooledConnection<'_, Self>,
-        ) -> Result<(), Self::Error> {
+        async fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
             Ok(())
         }
 
