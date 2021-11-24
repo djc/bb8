@@ -1,6 +1,6 @@
 [package]
 name = "bb8-redis"
-version = "0.10.1"
+version = "0.11.0"
 description = "Full-featured async (tokio-based) redis connection pool (like r2d2)"
 license = "MIT"
 repository = "https://github.com/djc/bb8"
@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 async-trait = "0.1"
-bb8 = { version = "0.7", path = "../bb8" }
+bb8 = { version = "0.8", path = "../bb8" }
 redis = { version = "0.21.1", default-features = false, features = ["tokio-comp"] }
 
 [dev-dependencies]
