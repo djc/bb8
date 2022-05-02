@@ -7,6 +7,7 @@ use parking_lot::Mutex;
 
 use crate::api::{Builder, ManageConnection};
 use std::collections::VecDeque;
+use std::convert::TryFrom;
 
 /// The guts of a `Pool`.
 #[allow(missing_debug_implementations)]
@@ -130,19 +131,32 @@ where
     pub(crate) fn reap(&mut self, config: &Builder<M>) -> ApprovalIter {
         let now = Instant::now();
         let before = self.conns.len();
+        let mut after = before;
+        // If `config.min_idle` does not fit in a usize, then saturate to the maximum value of a
+        // usize so that `after <= min_idle` below is always true.
+        let min_idle = config
+            .min_idle
+            .and_then(|min_idle| usize::try_from(min_idle).ok())
+            .unwrap_or(usize::MAX);
 
         self.conns.retain(|conn| {
             let mut keep = true;
-            if let Some(timeout) = config.idle_timeout {
-                keep &= now - conn.idle_start < timeout;
+            if config.reap_all_idle_connections || after > min_idle {
+                if let Some(timeout) = config.idle_timeout {
+                    keep &= now - conn.idle_start < timeout;
+                }
             }
             if let Some(lifetime) = config.max_lifetime {
                 keep &= now - conn.conn.birth < lifetime;
             }
+
+            if !keep {
+                after -= 1;
+            }
             keep
         });
 
-        self.dropped((before - self.conns.len()) as u32, config)
+        self.dropped((before - after) as u32, config)
     }
 
     pub(crate) fn state(&self) -> State {

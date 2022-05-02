@@ -508,6 +508,34 @@ async fn test_min_idle() {
 }
 
 #[tokio::test]
+async fn test_reap_all_idle_connections_off() {
+    static CREATED: AtomicUsize = AtomicUsize::new(0);
+
+    struct Connection;
+
+    impl Default for Connection {
+        fn default() -> Self {
+            CREATED.fetch_add(1, Ordering::SeqCst);
+            Self
+        }
+    }
+
+    let manager = OkManager::<Connection>::new();
+    let _pool = Pool::builder()
+        .min_idle(Some(1))
+        .idle_timeout(Some(Duration::from_millis(10)))
+        .reap_all_idle_connections(false)
+        .reaper_rate(Duration::from_millis(20))
+        .build(manager)
+        .await
+        .unwrap();
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert!(CREATED.load(Ordering::SeqCst) == 1)
+}
+
+#[tokio::test]
 async fn test_conns_drop_on_pool_drop() {
     static DROPPED: AtomicUsize = AtomicUsize::new(0);
 

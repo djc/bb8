@@ -87,6 +87,9 @@ pub struct Builder<M: ManageConnection> {
     pub(crate) max_lifetime: Option<Duration>,
     /// The duration, if any, after which idle_connections in excess of `min_idle` are closed.
     pub(crate) idle_timeout: Option<Duration>,
+    /// Whether or not to reap all connections idle for longer than
+    /// `idle_timeout`, rather than just those in excess of `min_idle`.
+    pub(crate) reap_all_idle_connections: bool,
     /// The duration to wait to start a connection before giving up.
     pub(crate) connection_timeout: Duration,
     /// The error sink.
@@ -106,6 +109,7 @@ impl<M: ManageConnection> Default for Builder<M> {
             test_on_check_out: true,
             max_lifetime: Some(Duration::from_secs(30 * 60)),
             idle_timeout: Some(Duration::from_secs(10 * 60)),
+            reap_all_idle_connections: true,
             connection_timeout: Duration::from_secs(30),
             error_sink: Box::new(NopErrorSink),
             reaper_rate: Duration::from_secs(30),
@@ -182,6 +186,20 @@ impl<M: ManageConnection> Builder<M> {
             "idle_timeout must be greater than zero!"
         );
         self.idle_timeout = idle_timeout;
+        self
+    }
+
+    /// If true, all connections that have been idle for longer than
+    /// `idle_timeout` will be closed at the next reaping, rather than just
+    /// those in excess of `min_idle`.
+    ///
+    /// If connections are expensive to establish and/or are generally stable
+    /// over time, it may be preferable to disable this so that connections are
+    /// not excessively closed and reopened.
+    ///
+    /// Defaults to true.
+    pub fn reap_all_idle_connections(mut self, reap_all_idle_connections: bool) -> Builder<M> {
+        self.reap_all_idle_connections = reap_all_idle_connections;
         self
     }
 
