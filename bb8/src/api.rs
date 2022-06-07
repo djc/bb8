@@ -382,7 +382,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            RunError::User(ref err) => write!(f, "{}", err),
+            RunError::User(ref err) => write!(f, "{err}"),
             RunError::TimedOut => write!(f, "Timed out in bb8"),
         }
     }

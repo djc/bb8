@@ -17,7 +17,7 @@ async fn main() {
 
     let pool = match Pool::builder().build(pg_mgr).await {
         Ok(pool) => pool,
-        Err(e) => panic!("builder error: {:?}", e),
+        Err(e) => panic!("builder error: {e:?}"),
     };
 
     let connection = pool.get().await.unwrap();

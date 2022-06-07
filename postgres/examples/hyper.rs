@@ -22,7 +22,7 @@ async fn main() {
 
     let pool = match Pool::builder().build(pg_mgr).await {
         Ok(pool) => pool,
-        Err(e) => panic!("bb8 error {}", e),
+        Err(e) => panic!("bb8 error {e}"),
     };
 
     let _ = Server::bind(&addr)
@@ -40,7 +40,7 @@ async fn main() {
                             }
                             Err(e) => {
                                 println!("Sending error response");
-                                Response::new(Body::from(format!("Internal error {:?}", e)))
+                                Response::new(Body::from(format!("Internal error {e:?}")))
                             }
                         })
                     }
@@ -57,5 +57,5 @@ async fn handler(
     let stmt = conn.prepare("SELECT 1").await?;
     let row = conn.query_one(&stmt, &[]).await?;
     let v = row.get::<usize, i32>(0);
-    Ok(Response::new(Body::from(format!("Got results {:?}", v))))
+    Ok(Response::new(Body::from(format!("Got results {v:?}"))))
 }
