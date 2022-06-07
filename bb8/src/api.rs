@@ -157,13 +157,14 @@ impl<M: ManageConnection> Builder<M> {
     /// If set, connections will be closed at the next reaping after surviving
     /// past this duration.
     ///
-    /// If a connection reachs its maximum lifetime while checked out it will be
+    /// If a connection reaches its maximum lifetime while checked out it will be
     /// closed when it is returned to the pool.
     ///
     /// Defaults to 30 minutes.
     pub fn max_lifetime(mut self, max_lifetime: Option<Duration>) -> Builder<M> {
-        assert!(
-            max_lifetime != Some(Duration::from_secs(0)),
+        assert_ne!(
+            max_lifetime,
+            Some(Duration::from_secs(0)),
             "max_lifetime must be greater than zero!"
         );
         self.max_lifetime = max_lifetime;
@@ -177,8 +178,9 @@ impl<M: ManageConnection> Builder<M> {
     ///
     /// Defaults to 10 minutes.
     pub fn idle_timeout(mut self, idle_timeout: Option<Duration>) -> Builder<M> {
-        assert!(
-            idle_timeout != Some(Duration::from_secs(0)),
+        assert_ne!(
+            idle_timeout,
+            Some(Duration::from_secs(0)),
             "idle_timeout must be greater than zero!"
         );
         self.idle_timeout = idle_timeout;
@@ -277,7 +279,7 @@ pub trait ManageConnection: Sized + Send + Sync + 'static {
 /// A trait which provides functionality to initialize a connection
 #[async_trait]
 pub trait CustomizeConnection<C: Send + 'static, E: 'static>:
-    std::fmt::Debug + Send + Sync + 'static
+    fmt::Debug + Send + Sync + 'static
 {
     /// Called with connections immediately after they are returned from
     /// `ManageConnection::connect`.
