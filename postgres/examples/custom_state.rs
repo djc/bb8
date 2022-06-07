@@ -15,9 +15,7 @@ use tokio_postgres::{Client, Error, Socket, Statement};
 // docker run --name gotham-middleware-postgres -e POSTGRES_PASSWORD=mysecretpassword -p 5432:5432 -d postgres
 #[tokio::main]
 async fn main() {
-    let config =
-        tokio_postgres::config::Config::from_str("postgresql://postgres:docker@localhost:5432")
-            .unwrap();
+    let config = Config::from_str("postgresql://postgres:docker@localhost:5432").unwrap();
     let pg_mgr = CustomPostgresConnectionManager::new(config, tokio_postgres::NoTls);
 
     let pool = Pool::builder()

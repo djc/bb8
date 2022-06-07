@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::task::Poll;
 use std::time::Duration;
-use std::{error, fmt, mem};
+use std::{error, fmt};
 
 use async_trait::async_trait;
 use futures_channel::oneshot;
@@ -270,7 +270,7 @@ async fn test_lazy_initialization_failure() {
         .build_unchecked(manager);
 
     let res = pool.get().await;
-    assert_eq!(res.unwrap_err(), bb8::RunError::TimedOut);
+    assert_eq!(res.unwrap_err(), RunError::TimedOut);
 }
 
 #[tokio::test]
@@ -547,7 +547,7 @@ async fn test_conns_drop_on_pool_drop() {
         .await
         .unwrap();
 
-    mem::drop(pool);
+    drop(pool);
 
     for _ in 0u8..10 {
         if DROPPED.load(Ordering::SeqCst) == 10 {
@@ -741,7 +741,7 @@ async fn test_customize_connection_acquire() {
 
     #[derive(Debug, Default)]
     struct CountingCustomizer {
-        count: std::sync::atomic::AtomicUsize,
+        count: AtomicUsize,
     }
 
     #[async_trait]

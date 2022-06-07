@@ -16,7 +16,7 @@ async fn main() {
 
     let pg_mgr = PostgresConnectionManager::new_from_stringlike(
         "postgresql://postgres:mysecretpassword@localhost:5432",
-        tokio_postgres::NoTls,
+        NoTls,
     )
     .unwrap();
 
