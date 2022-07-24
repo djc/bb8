@@ -44,7 +44,7 @@ async fn main() {
 struct Customizer;
 
 #[async_trait]
-impl<'a> CustomizeConnection<CustomPostgresConnection, Error> for Customizer {
+impl CustomizeConnection<CustomPostgresConnection, Error> for Customizer {
     async fn on_acquire(&self, conn: &mut CustomPostgresConnection) -> Result<(), Error> {
         conn.custom_state
             .insert(QueryName::BasicSelect, conn.prepare("SELECT 1").await?);
