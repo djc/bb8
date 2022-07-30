@@ -119,14 +119,20 @@ impl<M: ManageConnection> Builder<M> {
     /// Constructs a new `Builder`.
     ///
     /// Parameters are initialized with their default values.
-    pub fn new() -> Builder<M> {
-        Default::default()
+    #[must_use]
+    pub fn new() -> Self {
+        Builder::default()
     }
 
     /// Sets the maximum number of connections managed by the pool.
     ///
     /// Defaults to 10.
-    pub fn max_size(mut self, max_size: u32) -> Builder<M> {
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `max_size` is 0.
+    #[must_use]
+    pub fn max_size(mut self, max_size: u32) -> Self {
         assert!(max_size > 0, "max_size must be greater than zero!");
         self.max_size = max_size;
         self
@@ -138,7 +144,8 @@ impl<M: ManageConnection> Builder<M> {
     /// connections at all times, while respecting the value of `max_size`.
     ///
     /// Defaults to None.
-    pub fn min_idle(mut self, min_idle: Option<u32>) -> Builder<M> {
+    #[must_use]
+    pub fn min_idle(mut self, min_idle: Option<u32>) -> Self {
         self.min_idle = min_idle;
         self
     }
@@ -147,7 +154,8 @@ impl<M: ManageConnection> Builder<M> {
     /// `ManageConnection::is_valid` before it is provided to a pool user.
     ///
     /// Defaults to true.
-    pub fn test_on_check_out(mut self, test_on_check_out: bool) -> Builder<M> {
+    #[must_use]
+    pub fn test_on_check_out(mut self, test_on_check_out: bool) -> Self {
         self.test_on_check_out = test_on_check_out;
         self
     }
@@ -161,7 +169,12 @@ impl<M: ManageConnection> Builder<M> {
     /// closed when it is returned to the pool.
     ///
     /// Defaults to 30 minutes.
-    pub fn max_lifetime(mut self, max_lifetime: Option<Duration>) -> Builder<M> {
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `max_lifetime` is 0.
+    #[must_use]
+    pub fn max_lifetime(mut self, max_lifetime: Option<Duration>) -> Self {
         assert_ne!(
             max_lifetime,
             Some(Duration::from_secs(0)),
@@ -177,7 +190,12 @@ impl<M: ManageConnection> Builder<M> {
     /// next reaping after remaining idle past this duration.
     ///
     /// Defaults to 10 minutes.
-    pub fn idle_timeout(mut self, idle_timeout: Option<Duration>) -> Builder<M> {
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `idle_timeout` is 0.
+    #[must_use]
+    pub fn idle_timeout(mut self, idle_timeout: Option<Duration>) -> Self {
         assert_ne!(
             idle_timeout,
             Some(Duration::from_secs(0)),
@@ -193,7 +211,12 @@ impl<M: ManageConnection> Builder<M> {
     /// resolving with an error.
     ///
     /// Defaults to 30 seconds.
-    pub fn connection_timeout(mut self, connection_timeout: Duration) -> Builder<M> {
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `connection_timeout` is 0.
+    #[must_use]
+    pub fn connection_timeout(mut self, connection_timeout: Duration) -> Self {
         assert!(
             connection_timeout > Duration::from_secs(0),
             "connection_timeout must be non-zero"
@@ -206,23 +229,26 @@ impl<M: ManageConnection> Builder<M> {
     /// on the pool. This can be used to log and monitor failures.
     ///
     /// Defaults to `NopErrorSink`.
-    pub fn error_sink(mut self, error_sink: Box<dyn ErrorSink<M::Error>>) -> Builder<M> {
+    #[must_use]
+    pub fn error_sink(mut self, error_sink: Box<dyn ErrorSink<M::Error>>) -> Self {
         self.error_sink = error_sink;
         self
     }
 
     /// Used by tests
     #[allow(dead_code)]
-    pub fn reaper_rate(mut self, reaper_rate: Duration) -> Builder<M> {
+    #[must_use]
+    pub fn reaper_rate(mut self, reaper_rate: Duration) -> Self {
         self.reaper_rate = reaper_rate;
         self
     }
 
     /// Set the connection customizer to customize newly checked out connections
+    #[must_use]
     pub fn connection_customizer(
         mut self,
         connection_customizer: Box<dyn CustomizeConnection<M::Connection, M::Error>>,
-    ) -> Builder<M> {
+    ) -> Self {
         self.connection_customizer = Some(connection_customizer);
         self
     }
@@ -334,7 +360,7 @@ where
 {
     type Target = M::Connection;
 
-    fn deref(&self) -> &M::Connection {
+    fn deref(&self) -> &Self::Target {
         &self.conn.as_ref().unwrap().conn
     }
 }
@@ -363,7 +389,7 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        self.pool.as_ref().put_back(self.conn.take())
+        self.pool.as_ref().put_back(self.conn.take());
     }
 }
 

@@ -43,7 +43,7 @@ where
         let wanted = self.inner.internals.lock().wanted(&self.inner.statics);
         let mut stream = self.replenish_idle_connections(wanted);
         while let Some(result) = stream.next().await {
-            result?
+            result?;
         }
         Ok(())
     }
@@ -262,7 +262,7 @@ where
         loop {
             let _ = interval.tick().await;
             if let Some(inner) = weak_shared.upgrade() {
-                PoolInner { inner }.reap()
+                PoolInner { inner }.reap();
             } else {
                 break;
             }
