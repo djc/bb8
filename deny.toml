@@ -1,3 +1,10 @@
 [licenses]
 allow-osi-fsf-free = "either"
 copyleft = "warn"
+
+# Transitive dependencies via tokio-postgres, disabled by default
+[advisories]
+ignore = [
+    "RUSTSEC-2022-0004",
+    "RUSTSEC-2020-0056",
+]
