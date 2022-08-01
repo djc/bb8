@@ -7,6 +7,7 @@ repository = "https://github.com/djc/bb8"
 edition = "2021"
 workspace = ".."
 readme = "../README.md"
+rust-version = "1.56"
 
 [dependencies]
 async-trait = "0.1"
