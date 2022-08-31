@@ -37,20 +37,22 @@ Backend | Adapter Crate
 Using an imaginary "foodb" database.
 
 ```rust
-fn main() {
+#[tokio::main]
+async fn main() {
     let manager = bb8_foodb::FooConnectionManager::new("localhost:1234");
     let pool = bb8::Pool::builder()
         .max_size(15)
         .build(manager)
+        .await
         .unwrap();
 
     for _ in 0..20 {
         let pool = pool.clone();
-        tokio::spawn(move || {
+        tokio::spawn(async move {
             let conn = pool.get().await.unwrap();
             // use the connection
             // it will be returned to the pool when it falls out of scope.
-        })
+        });
     }
 }
 ```
