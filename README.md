@@ -31,6 +31,7 @@ Backend | Adapter Crate
 [nebula-client](https://crates.io/crates/nebula-client) | [bb8-nebula](https://crates.io/crates/bb8-nebula)
 [memcache-async](https://github.com/vavrusa/memcache-async) | [bb8-memcached](https://crates.io/crates/bb8-memcached)
 [lapin](https://crates.io/crates/lapin) | [bb8-lapin](https://crates.io/crates/bb8-lapin)
+[arangors](https://crates.io/crates/arangors) | [bb8-arangodb](https://crates.io/crates/bb8-arangodb)
 
 ## Example
 
