@@ -1,0 +1,18 @@
+[package]
+name = "bb8-redis-cluster"
+version = "0.12.0"
+description = "Full-featured async (tokio-based) redis cluster connection pool (like r2d2)"
+license = "MIT"
+repository = "https://github.com/djc/bb8"
+edition = "2021"
+rust-version = "1.56"
+
+[dependencies]
+async-trait = "0.1"
+bb8 = { version = "0.8", path = "../bb8" }
+redis = { version = "0.21.6", default-features = false, features = ["tokio-comp"] }
+redis_cluster_async="0.7.0"
+
+[dev-dependencies]
+futures-util = "0.3.15"
+tokio = { version = "1.0.0", features = ["macros", "rt-multi-thread"] }

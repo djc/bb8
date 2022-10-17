@@ -3,4 +3,5 @@ members = [
     "bb8",
     "postgres",
     "redis",
+    "redis-cluster",
 ]
