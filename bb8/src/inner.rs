@@ -1,17 +1,14 @@
+use crate::api::{Builder, Executor, ManageConnection, PooledConnection, RunError};
+use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, State};
+use futures_channel::oneshot;
+use futures_util::stream::{FuturesUnordered, StreamExt};
+use futures_util::TryFutureExt;
 use std::cmp::{max, min};
 use std::fmt;
 use std::future::Future;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
-
-use futures_channel::oneshot;
-use futures_util::stream::{FuturesUnordered, StreamExt};
-use futures_util::TryFutureExt;
-use tokio::spawn;
 use tokio::time::{interval_at, sleep, timeout, Interval};
-
-use crate::api::{Builder, ManageConnection, PooledConnection, RunError};
-use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, State};
 
 pub(crate) struct PoolInner<M>
 where
@@ -24,15 +21,15 @@ impl<M> PoolInner<M>
 where
     M: ManageConnection + Send,
 {
-    pub(crate) fn new(builder: Builder<M>, manager: M) -> Self {
-        let inner = Arc::new(SharedPool::new(builder, manager));
+    pub(crate) fn new<E: Executor>(builder: Builder<M>, manager: M, executor: E) -> Self {
+        let inner = Arc::new(SharedPool::new(builder, manager, executor));
 
         if inner.statics.max_lifetime.is_some() || inner.statics.idle_timeout.is_some() {
             let s = Arc::downgrade(&inner);
             if let Some(shared) = s.upgrade() {
                 let start = Instant::now() + shared.statics.reaper_rate;
                 let interval = interval_at(start.into(), shared.statics.reaper_rate);
-                schedule_reaping(interval, s);
+                schedule_reaping(&inner.executor, interval, s);
             }
         }
 
@@ -59,7 +56,7 @@ where
         }
 
         let this = self.clone();
-        spawn(async move {
+        self.inner.executor.execute(Box::pin(async move {
             let mut stream = this.replenish_idle_connections(approvals);
             while let Some(result) = stream.next().await {
                 match result {
@@ -67,7 +64,7 @@ where
                     Err(e) => this.inner.statics.error_sink.sink(e),
                 }
             }
-        });
+        }));
     }
 
     fn replenish_idle_connections(
@@ -254,11 +251,14 @@ where
     }
 }
 
-fn schedule_reaping<M>(mut interval: Interval, weak_shared: Weak<SharedPool<M>>)
-where
+fn schedule_reaping<M>(
+    executor: &Box<dyn Executor>,
+    mut interval: Interval,
+    weak_shared: Weak<SharedPool<M>>,
+) where
     M: ManageConnection,
 {
-    spawn(async move {
+    executor.execute(Box::pin(async move {
         loop {
             let _ = interval.tick().await;
             if let Some(inner) = weak_shared.upgrade() {
@@ -267,5 +267,5 @@ where
                 break;
             }
         }
-    });
+    }));
 }

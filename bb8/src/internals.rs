@@ -1,12 +1,10 @@
-use std::cmp::min;
-use std::sync::Arc;
-use std::time::Instant;
-
+use crate::api::{Builder, Executor, ManageConnection};
 use futures_channel::oneshot;
 use parking_lot::Mutex;
-
-use crate::api::{Builder, ManageConnection};
+use std::cmp::min;
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::time::Instant;
 
 /// The guts of a `Pool`.
 #[allow(missing_debug_implementations)]
@@ -15,6 +13,7 @@ where
     M: ManageConnection + Send,
 {
     pub(crate) statics: Builder<M>,
+    pub(crate) executor: Box<dyn Executor + 'static>,
     pub(crate) manager: M,
     pub(crate) internals: Mutex<PoolInternals<M>>,
 }
@@ -23,11 +22,12 @@ impl<M> SharedPool<M>
 where
     M: ManageConnection + Send,
 {
-    pub(crate) fn new(statics: Builder<M>, manager: M) -> Self {
+    pub(crate) fn new<E: Executor>(statics: Builder<M>, manager: M, executor: E) -> Self {
         Self {
             statics,
             manager,
             internals: Mutex::new(PoolInternals::default()),
+            executor: Box::new(executor),
         }
     }
 }
