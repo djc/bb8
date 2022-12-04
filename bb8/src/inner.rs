@@ -29,7 +29,7 @@ where
             if let Some(shared) = s.upgrade() {
                 let start = Instant::now() + shared.statics.reaper_rate;
                 let interval = interval_at(start.into(), shared.statics.reaper_rate);
-                schedule_reaping(&inner.executor, interval, s);
+                schedule_reaping(inner.executor.as_ref(), interval, s);
             }
         }
 
@@ -252,7 +252,7 @@ where
 }
 
 fn schedule_reaping<M>(
-    executor: &Box<dyn Executor>,
+    executor: &dyn Executor,
     mut interval: Interval,
     weak_shared: Weak<SharedPool<M>>,
 ) where
