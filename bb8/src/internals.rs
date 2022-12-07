@@ -15,7 +15,7 @@ where
     M: ManageConnection + Send,
 {
     pub(crate) statics: Builder<M>,
-    pub(crate) executor: Box<dyn Executor + 'static>,
+    pub(crate) executor: Box<dyn Executor>,
     pub(crate) manager: M,
     pub(crate) internals: Mutex<PoolInternals<M>>,
 }
