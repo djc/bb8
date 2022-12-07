@@ -1,14 +1,16 @@
-use crate::api::{Builder, Executor, ManageConnection, PooledConnection, RunError};
-use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, State};
-use futures_channel::oneshot;
-use futures_util::stream::{FuturesUnordered, StreamExt};
-use futures_util::TryFutureExt;
 use std::cmp::{max, min};
 use std::fmt;
 use std::future::Future;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::time::{interval_at, sleep, timeout, Interval};
+
+use futures_channel::oneshot;
+use futures_util::stream::{FuturesUnordered, StreamExt};
+use futures_util::TryFutureExt;
+
+use crate::api::{Builder, Executor, ManageConnection, PooledConnection, RunError};
+use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, State};
 
 pub(crate) struct PoolInner<M>
 where

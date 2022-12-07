@@ -1,10 +1,12 @@
-use crate::api::{Builder, Executor, ManageConnection};
-use futures_channel::oneshot;
-use parking_lot::Mutex;
 use std::cmp::min;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Instant;
+
+use futures_channel::oneshot;
+use parking_lot::Mutex;
+
+use crate::api::{Builder, Executor, ManageConnection};
 
 /// The guts of a `Pool`.
 #[allow(missing_debug_implementations)]

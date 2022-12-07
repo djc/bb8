@@ -1,7 +1,3 @@
-use crate::inner::PoolInner;
-use crate::internals::Conn;
-pub use crate::internals::State;
-use async_trait::async_trait;
 use std::borrow::Cow;
 use std::error;
 use std::fmt;
@@ -11,11 +7,11 @@ use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::time::Duration;
 
-/// An executor of futures.
-pub trait Executor: Sync + Send + 'static {
-    /// Place the future into the executor to be run.
-    fn execute(&self, fut: Pin<Box<dyn Future<Output = ()> + Send>>);
-}
+use async_trait::async_trait;
+
+use crate::inner::PoolInner;
+use crate::internals::Conn;
+pub use crate::internals::State;
 
 /// A generic connection pool.
 pub struct Pool<M>
@@ -312,14 +308,6 @@ impl<M: ManageConnection> Builder<M> {
     }
 }
 
-struct TokioExecutor;
-
-impl Executor for TokioExecutor {
-    fn execute(&self, fut: Pin<Box<dyn Future<Output = ()> + Send>>) {
-        tokio::spawn(fut);
-    }
-}
-
 /// A trait which provides connection-specific functionality.
 #[async_trait]
 pub trait ManageConnection: Sized + Send + Sync + 'static {
@@ -488,5 +476,19 @@ impl<E> ErrorSink<E> for NopErrorSink {
 
     fn boxed_clone(&self) -> Box<dyn ErrorSink<E>> {
         Box::new(*self)
+    }
+}
+
+/// An executor of futures.
+pub trait Executor: Sync + Send + 'static {
+    /// Place the future into the executor to be run.
+    fn execute(&self, fut: Pin<Box<dyn Future<Output = ()> + Send>>);
+}
+
+struct TokioExecutor;
+
+impl Executor for TokioExecutor {
+    fn execute(&self, fut: Pin<Box<dyn Future<Output = ()> + Send>>) {
+        tokio::spawn(fut);
     }
 }
