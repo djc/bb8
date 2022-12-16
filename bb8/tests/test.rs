@@ -754,7 +754,7 @@ async fn test_customize_connection_acquire() {
 
     let pool = Pool::builder()
         .max_size(2)
-        .connection_customizer(Box::new(CountingCustomizer::default()))
+        .connection_customizer(Box::<CountingCustomizer>::default())
         .build(OkManager::<Connection>::new())
         .await
         .unwrap();
