@@ -108,7 +108,7 @@ where
 
 #[tokio::test]
 async fn test_max_size_ok() {
-    let manager = NthConnectionFailManager::<FakeConnection>::new(5);
+    let manager = NthConnectionFailManager::<FakeConnection>::new(6);
     let pool = Pool::builder().max_size(5).build(manager).await.unwrap();
     let mut channels = Vec::with_capacity(5);
     let mut ignored = Vec::with_capacity(5);
@@ -409,7 +409,7 @@ async fn test_max_lifetime() {
         }
     }
 
-    let manager = NthConnectionFailManager::<Connection>::new(5);
+    let manager = NthConnectionFailManager::<Connection>::new(6);
     let pool = Pool::builder()
         .max_lifetime(Some(Duration::from_secs(1)))
         .connection_timeout(Duration::from_secs(1))
@@ -442,14 +442,14 @@ async fn test_max_lifetime() {
     assert!(timeout(Duration::from_secs(2), pending::<()>())
         .await
         .is_err());
-    assert_eq!(DROPPED.load(Ordering::SeqCst), 4);
+    assert_eq!(DROPPED.load(Ordering::SeqCst), 5);
     tx2.send(()).unwrap();
 
     // And wait some more.
     assert!(timeout(Duration::from_secs(2), pending::<()>())
         .await
         .is_err());
-    assert_eq!(DROPPED.load(Ordering::SeqCst), 5);
+    assert_eq!(DROPPED.load(Ordering::SeqCst), 6);
 }
 
 #[tokio::test]
@@ -550,7 +550,7 @@ async fn test_conns_drop_on_pool_drop() {
     drop(pool);
 
     for _ in 0u8..10 {
-        if DROPPED.load(Ordering::SeqCst) == 10 {
+        if DROPPED.load(Ordering::SeqCst) == 11 {
             return;
         }
 
@@ -626,7 +626,7 @@ async fn test_conn_fail_once() {
 
         async fn connect(&self) -> Result<Self::Connection, Self::Error> {
             // only fail once so the retry should work
-            if FAILED_ONCE.load(Ordering::SeqCst) {
+            if FAILED_ONCE.load(Ordering::SeqCst) || NB_CALL.load(Ordering::SeqCst) == 0 {
                 Ok(Connection)
             } else {
                 FAILED_ONCE.store(true, Ordering::SeqCst);
