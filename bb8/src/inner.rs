@@ -151,6 +151,10 @@ where
         Ok(conn)
     }
 
+    pub(crate) async fn preconnect(&self) -> Result<(), M::Error> {
+        self.inner.manager.connect().await.and_then(|_|Ok(()))
+    }
+
     /// Return connection back in to the pool
     pub(crate) fn put_back(&self, conn: Option<Conn<M::Connection>>) {
         let conn = conn.and_then(|mut conn| {

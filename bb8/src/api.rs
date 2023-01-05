@@ -272,6 +272,7 @@ impl<M: ManageConnection> Builder<M> {
     /// minimum number of connections, or it times out.
     pub async fn build(self, manager: M) -> Result<Pool<M>, M::Error> {
         let pool = self.build_inner(manager);
+        pool.inner.preconnect().await?;
         pool.inner.start_connections().await.map(|()| pool)
     }
 
