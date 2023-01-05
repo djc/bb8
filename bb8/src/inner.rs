@@ -152,7 +152,7 @@ where
     }
 
     pub(crate) async fn preconnect(&self) -> Result<(), M::Error> {
-        self.inner.manager.connect().await.and_then(|_|Ok(()))
+        self.inner.manager.connect().await.map(|_| ())
     }
 
     /// Return connection back in to the pool
