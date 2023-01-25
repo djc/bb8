@@ -89,6 +89,8 @@ pub struct Builder<M: ManageConnection> {
     pub(crate) idle_timeout: Option<Duration>,
     /// The duration to wait to start a connection before giving up.
     pub(crate) connection_timeout: Duration,
+    /// Enable/disable automatic retries on connection creation.
+    pub(crate) retry_connection: bool,
     /// The error sink.
     pub(crate) error_sink: Box<dyn ErrorSink<M::Error>>,
     /// The time interval used to wake up and reap connections.
@@ -107,6 +109,7 @@ impl<M: ManageConnection> Default for Builder<M> {
             max_lifetime: Some(Duration::from_secs(30 * 60)),
             idle_timeout: Some(Duration::from_secs(10 * 60)),
             connection_timeout: Duration::from_secs(30),
+            retry_connection: true,
             error_sink: Box::new(NopErrorSink),
             reaper_rate: Duration::from_secs(30),
             connection_customizer: None,
@@ -222,6 +225,20 @@ impl<M: ManageConnection> Builder<M> {
             "connection_timeout must be non-zero"
         );
         self.connection_timeout = connection_timeout;
+        self
+    }
+
+    /// Instructs the pool to automatically retry connection creation if it fails.
+    ///
+    /// Useful for transient connectivity errors like temporary DNS resolution failure
+    /// or intermittent network failures. Some applications however are smart enough to
+    /// know that the server is down and retries won't help (and could actually hurt recovery).
+    /// In that case, it's better to disable retries here and let the pool error out.
+    ///
+    /// Defaults to enabled.
+    #[must_use]
+    pub fn retry_connection(mut self, retry: bool) -> Self {
+        self.retry_connection = retry;
         self
     }
 

@@ -212,7 +212,7 @@ where
                     return Ok(());
                 }
                 Err(e) => {
-                    if Instant::now() - start > self.inner.statics.connection_timeout {
+                    if !self.inner.statics.retry_connection || Instant::now() - start > self.inner.statics.connection_timeout {
                         let mut locked = shared.internals.lock();
                         locked.connect_failed(approval);
                         return Err(e);
