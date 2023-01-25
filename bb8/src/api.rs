@@ -228,7 +228,7 @@ impl<M: ManageConnection> Builder<M> {
         self
     }
 
-    /// Instructs the pool to automatically retry connection creation if it fails.
+    /// Instructs the pool to automatically retry connection creation if it fails, until the `connection_timeout` has expired.
     ///
     /// Useful for transient connectivity errors like temporary DNS resolution failure
     /// or intermittent network failures. Some applications however are smart enough to
