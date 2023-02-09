@@ -13,8 +13,12 @@ rust-version = "1.60"
 async-trait = "0.1"
 futures-channel = "0.3.2"
 futures-util = { version = "0.3.2", default-features = false, features = ["channel"] }
-parking_lot = "0.12"
-tokio = { version = "1.0", features = ["rt", "time", "parking_lot"] }
+parking_lot = { version = "0.12", optional = true }
+tokio = { version = "1.0", features = ["rt", "time"] }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros"] }
+
+[features]
+parking_lot = ["dep:parking_lot", "tokio/parking_lot"]
+default = ["parking_lot"]
