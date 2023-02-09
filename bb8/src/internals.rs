@@ -2,8 +2,8 @@ use std::cmp::min;
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::lock::Mutex;
 use futures_channel::oneshot;
-use parking_lot::Mutex;
 
 use crate::api::{Builder, ManageConnection};
 use std::collections::VecDeque;

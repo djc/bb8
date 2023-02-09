@@ -41,3 +41,33 @@ pub use api::{
 
 mod inner;
 mod internals;
+mod lock {
+    #[cfg(feature = "parking_lot")]
+    use parking_lot::Mutex as MutexImpl;
+    #[cfg(feature = "parking_lot")]
+    use parking_lot::MutexGuard;
+
+    #[cfg(not(feature = "parking_lot"))]
+    use std::sync::Mutex as MutexImpl;
+    #[cfg(not(feature = "parking_lot"))]
+    use std::sync::MutexGuard;
+
+    pub(crate) struct Mutex<T>(MutexImpl<T>);
+
+    impl<T> Mutex<T> {
+        pub(crate) fn new(val: T) -> Self {
+            Self(MutexImpl::new(val))
+        }
+
+        pub(crate) fn lock(&self) -> MutexGuard<'_, T> {
+            #[cfg(feature = "parking_lot")]
+            {
+                self.0.lock()
+            }
+            #[cfg(not(feature = "parking_lot"))]
+            {
+                self.0.lock().unwrap()
+            }
+        }
+    }
+}
