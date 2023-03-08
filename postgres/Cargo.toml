@@ -5,7 +5,7 @@ description = "Full-featured async (tokio-based) postgres connection pool (like 
 license = "MIT"
 repository = "https://github.com/djc/bb8"
 edition = "2021"
-rust-version = "1.56"
+rust-version = "1.60"
 
 [features]
 "with-bit-vec-0_6" = ["tokio-postgres/with-bit-vec-0_6"]
