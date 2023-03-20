@@ -274,6 +274,18 @@ async fn test_lazy_initialization_failure() {
 }
 
 #[tokio::test]
+async fn test_lazy_initialization_failure_no_retry() {
+    let manager = NthConnectionFailManager::<FakeConnection>::new(0);
+    let pool = Pool::builder()
+        .connection_timeout(Duration::from_secs(1))
+        .retry_connection(false)
+        .build_unchecked(manager);
+
+    let res = pool.get().await;
+    assert_eq!(res.unwrap_err(), RunError::User(Error));
+}
+
+#[tokio::test]
 async fn test_get_timeout() {
     let pool = Pool::builder()
         .max_size(1)
