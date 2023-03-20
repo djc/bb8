@@ -30,6 +30,18 @@ where
             internals: Mutex::new(PoolInternals::default()),
         }
     }
+
+    pub(crate) fn forward_error(&self, mut err: M::Error) {
+        let mut locked = self.internals.lock();
+        while let Some(waiter) = locked.waiters.pop_front() {
+            match waiter.send(Err(err)) {
+                Ok(_) => return,
+                Err(Err(e)) => err = e,
+                Err(Ok(_)) => unreachable!(),
+            }
+        }
+        self.statics.error_sink.sink(err);
+    }
 }
 
 /// The pool data that must be protected by a lock.
@@ -38,7 +50,7 @@ pub(crate) struct PoolInternals<M>
 where
     M: ManageConnection,
 {
-    waiters: VecDeque<oneshot::Sender<InternalsGuard<M>>>,
+    waiters: VecDeque<oneshot::Sender<Result<InternalsGuard<M>, M::Error>>>,
     conns: VecDeque<IdleConn<M::Connection>>,
     num_conns: u32,
     pending_conns: u32,
@@ -71,11 +83,12 @@ where
         let mut guard = InternalsGuard::new(conn, pool);
         while let Some(waiter) = self.waiters.pop_front() {
             // This connection is no longer idle, send it back out
-            match waiter.send(guard) {
+            match waiter.send(Ok(guard)) {
                 Ok(()) => return,
-                Err(g) => {
+                Err(Ok(g)) => {
                     guard = g;
                 }
+                Err(Err(_)) => unreachable!(),
             }
         }
 
@@ -107,7 +120,7 @@ where
 
     pub(crate) fn push_waiter(
         &mut self,
-        waiter: oneshot::Sender<InternalsGuard<M>>,
+        waiter: oneshot::Sender<Result<InternalsGuard<M>, M::Error>>,
         config: &Builder<M>,
     ) -> ApprovalIter {
         self.waiters.push_back(waiter);

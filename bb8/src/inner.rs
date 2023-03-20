@@ -64,7 +64,7 @@ where
             while let Some(result) = stream.next().await {
                 match result {
                     Ok(()) => {}
-                    Err(e) => this.inner.statics.error_sink.sink(e),
+                    Err(e) => this.inner.forward_error(e),
                 }
             }
         });
@@ -125,7 +125,7 @@ where
             match self.inner.manager.is_valid(&mut conn).await {
                 Ok(()) => return Ok(conn),
                 Err(e) => {
-                    self.inner.statics.error_sink.sink(e);
+                    self.inner.forward_error(e);
                     conn.drop_invalid();
                     continue;
                 }
@@ -140,7 +140,8 @@ where
         };
 
         match timeout(self.inner.statics.connection_timeout, rx).await {
-            Ok(Ok(mut guard)) => Ok(make_pooled_conn(self, guard.extract())),
+            Ok(Ok(Ok(mut guard))) => Ok(make_pooled_conn(self, guard.extract())),
+            Ok(Ok(Err(e))) => Err(RunError::User(e)),
             _ => Err(RunError::TimedOut),
         }
     }
