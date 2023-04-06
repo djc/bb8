@@ -10,7 +10,7 @@ rust-version = "1.60"
 [dependencies]
 async-trait = "0.1"
 bb8 = { version = "0.8", path = "../bb8" }
-redis = { version = "0.22", default-features = false, features = ["tokio-comp"] }
+redis = { version = "0.23", default-features = false, features = ["tokio-comp"] }
 
 [dev-dependencies]
 futures-util = "0.3.15"
