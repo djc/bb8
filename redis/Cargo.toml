@@ -1,6 +1,6 @@
 [package]
 name = "bb8-redis"
-version = "0.12.0"
+version = "0.13.0"
 description = "Full-featured async (tokio-based) redis connection pool (like r2d2)"
 license = "MIT"
 repository = "https://github.com/djc/bb8"
