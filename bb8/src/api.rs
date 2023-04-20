@@ -1,8 +1,10 @@
 use std::borrow::Cow;
 use std::error;
 use std::fmt;
+use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use std::pin::Pin;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -270,7 +272,7 @@ impl<M: ManageConnection> Builder<M> {
         self
     }
 
-    fn build_inner(self, manager: M) -> Pool<M> {
+    fn build_inner<E: Executor>(self, manager: M, executor: E) -> Pool<M> {
         if let Some(min_idle) = self.min_idle {
             assert!(
                 self.max_size >= min_idle,
@@ -279,7 +281,7 @@ impl<M: ManageConnection> Builder<M> {
         }
 
         Pool {
-            inner: PoolInner::new(self, manager),
+            inner: PoolInner::new(self, manager, executor),
         }
     }
 
@@ -288,7 +290,19 @@ impl<M: ManageConnection> Builder<M> {
     /// The `Pool` will not be returned until it has established its configured
     /// minimum number of connections, or it times out.
     pub async fn build(self, manager: M) -> Result<Pool<M>, M::Error> {
-        let pool = self.build_inner(manager);
+        self.build_with_executor(manager, TokioExecutor).await
+    }
+
+    /// Consumes the builder with the specified executor, returning a new, initialized `Pool`.
+    ///
+    /// The `Pool` will not be returned until it has established its configured
+    /// minimum number of connections, or it times out.
+    pub async fn build_with_executor<E: Executor>(
+        self,
+        manager: M,
+        executor: E,
+    ) -> Result<Pool<M>, M::Error> {
+        let pool = self.build_inner(manager, executor);
         pool.inner.start_connections().await.map(|()| pool)
     }
 
@@ -297,7 +311,15 @@ impl<M: ManageConnection> Builder<M> {
     /// Unlike `build`, this does not wait for any connections to be established
     /// before returning.
     pub fn build_unchecked(self, manager: M) -> Pool<M> {
-        let p = self.build_inner(manager);
+        self.build_unchecked_with_executor(manager, TokioExecutor)
+    }
+
+    /// Consumes the builder with the specified executor, returning a new, initialized `Pool`.
+    ///
+    /// Unlike `build`, this does not wait for any connections to be established
+    /// before returning.
+    pub fn build_unchecked_with_executor<E: Executor>(self, manager: M, executor: E) -> Pool<M> {
+        let p = self.build_inner(manager, executor);
         p.inner.spawn_start_connections();
         p
     }
@@ -471,5 +493,19 @@ impl<E> ErrorSink<E> for NopErrorSink {
 
     fn boxed_clone(&self) -> Box<dyn ErrorSink<E>> {
         Box::new(*self)
+    }
+}
+
+/// An executor of futures.
+pub trait Executor: Sync + Send + 'static {
+    /// Place the future into the executor to be run.
+    fn execute(&self, fut: Pin<Box<dyn Future<Output = ()> + Send>>);
+}
+
+struct TokioExecutor;
+
+impl Executor for TokioExecutor {
+    fn execute(&self, fut: Pin<Box<dyn Future<Output = ()> + Send>>) {
+        tokio::spawn(fut);
     }
 }
