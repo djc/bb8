@@ -189,8 +189,6 @@ impl<M: ManageConnection> Builder<M> {
 
         if let Some(max_lifetime) = max_lifetime {
             self.reaper_rate = std::cmp::min(DEFAULT_REAPER_RATE, max_lifetime);
-        } else {
-            self.reaper_rate = std::cmp::min(DEFAULT_REAPER_RATE, self.reaper_rate)
         }
 
         self.max_lifetime = max_lifetime;
@@ -217,8 +215,6 @@ impl<M: ManageConnection> Builder<M> {
 
         if let Some(idle_timeout) = idle_timeout {
             self.reaper_rate = std::cmp::min(DEFAULT_REAPER_RATE, idle_timeout);
-        } else {
-            self.reaper_rate = std::cmp::min(DEFAULT_REAPER_RATE, self.reaper_rate)
         }
 
         self.idle_timeout = idle_timeout;
