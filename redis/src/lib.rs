@@ -39,8 +39,49 @@ pub use bb8;
 pub use redis;
 
 use async_trait::async_trait;
+use redis::aio::PubSub;
 use redis::{aio::Connection, ErrorKind};
 use redis::{Client, IntoConnectionInfo, RedisError};
+
+/// A `bb8::ManageConnection` for `redis::aio::PubSub`
+#[derive(Clone, Debug)]
+pub struct RedisPubSubConnectionManager {
+    client: Client,
+}
+
+impl RedisPubSubConnectionManager {
+    /// Create a new `RedisConnectionPubSubManager`.
+    /// See `redis::Client::open` for a description of the parameter types.
+    pub fn new<T: IntoConnectionInfo>(info: T) -> Result<Self, RedisError> {
+        Ok(Self {
+            client: Client::open(info.into_connection_info()?)?,
+        })
+    }
+}
+
+#[async_trait]
+impl bb8::ManageConnection for RedisPubSubConnectionManager {
+    type Connection = PubSub;
+    type Error = RedisError;
+
+    async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+        Ok(self.client.get_async_connection().await?.into_pubsub())
+    }
+
+    async fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
+        // TODO:
+        Ok(())
+        // let pong: String = redis::cmd("PING").query_async(conn).await?;
+        // match pong.as_str() {
+        //     "PONG" => Ok(()),
+        //     _ => Err((ErrorKind::ResponseError, "ping request").into()),
+        // }
+    }
+
+    fn has_broken(&self, _: &mut Self::Connection) -> bool {
+        false
+    }
+}
 
 /// A `bb8::ManageConnection` for `redis::Client::get_async_connection`.
 #[derive(Clone, Debug)]
