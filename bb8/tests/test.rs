@@ -413,7 +413,6 @@ async fn test_max_lifetime() {
     let pool = Pool::builder()
         .max_lifetime(Some(Duration::from_secs(1)))
         .connection_timeout(Duration::from_secs(1))
-        .reaper_rate(Duration::from_secs(1))
         .max_size(5)
         .min_idle(Some(5))
         .build(manager)
