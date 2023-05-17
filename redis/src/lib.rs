@@ -68,14 +68,8 @@ impl bb8::ManageConnection for RedisPubSubConnectionManager {
         Ok(self.client.get_async_connection().await?.into_pubsub())
     }
 
-    async fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
-        // TODO:
-        Ok(())
-        // let pong: String = redis::cmd("PING").query_async(conn).await?;
-        // match pong.as_str() {
-        //     "PONG" => Ok(()),
-        //     _ => Err((ErrorKind::ResponseError, "ping request").into()),
-        // }
+    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
+        conn.punsubscribe("").await
     }
 
     fn has_broken(&self, _: &mut Self::Connection) -> bool {
