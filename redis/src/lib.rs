@@ -39,7 +39,10 @@ pub use bb8;
 pub use redis;
 
 use async_trait::async_trait;
-use redis::{aio::Connection, ErrorKind};
+use redis::{
+    aio::{Connection, MultiplexedConnection},
+    ErrorKind,
+};
 use redis::{Client, IntoConnectionInfo, RedisError};
 
 /// A `bb8::ManageConnection` for `redis::Client::get_async_connection`.
@@ -65,6 +68,46 @@ impl bb8::ManageConnection for RedisConnectionManager {
 
     async fn connect(&self) -> Result<Self::Connection, Self::Error> {
         self.client.get_async_connection().await
+    }
+
+    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
+        let pong: String = redis::cmd("PING").query_async(conn).await?;
+        match pong.as_str() {
+            "PONG" => Ok(()),
+            _ => Err((ErrorKind::ResponseError, "ping request").into()),
+        }
+    }
+
+    fn has_broken(&self, _: &mut Self::Connection) -> bool {
+        false
+    }
+}
+
+/// A `bb8::ManageConnection` for `redis::Client::get_multiplexed_async_connection`.
+#[derive(Clone, Debug)]
+pub struct RedisMultiplexedConnectionManager {
+    client: Client,
+}
+
+impl RedisMultiplexedConnectionManager {
+    /// Create a new `RedisMultiplexedConnectionManager`.
+    /// See `redis::Client::open` for a description of the parameter types.
+    pub fn new<T: IntoConnectionInfo>(
+        info: T,
+    ) -> Result<RedisMultiplexedConnectionManager, RedisError> {
+        Ok(RedisMultiplexedConnectionManager {
+            client: Client::open(info.into_connection_info()?)?,
+        })
+    }
+}
+
+#[async_trait]
+impl bb8::ManageConnection for RedisMultiplexedConnectionManager {
+    type Connection = MultiplexedConnection;
+    type Error = RedisError;
+
+    async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+        self.client.get_multiplexed_async_connection().await
     }
 
     async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
