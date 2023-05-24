@@ -273,7 +273,7 @@ impl<M: ManageConnection> Builder<M> {
 
     /// Sets the queue strategy to be used by the pool
     ///
-    /// Defaults to `LIFO`.
+    /// Defaults to `FIFO`.
     #[must_use]
     pub fn queue_strategy(mut self, queue_strategy: QueueStrategy) -> Self {
         self.queue_strategy = queue_strategy;

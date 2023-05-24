@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::{lock::Mutex, api::QueueStrategy};
+use crate::{api::QueueStrategy, lock::Mutex};
 use futures_channel::oneshot;
 
 use crate::api::{Builder, ManageConnection};
