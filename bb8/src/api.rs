@@ -74,14 +74,6 @@ impl<M: ManageConnection> Pool<M> {
     }
 }
 
-#[derive(Debug)]
-pub enum QueueStrategy {
-    /// Last in first out
-    Lifo,
-    /// First in first out
-    Fifo,
-}
-
 /// A builder for a connection pool.
 #[derive(Debug)]
 pub struct Builder<M: ManageConnection> {
@@ -110,6 +102,19 @@ pub struct Builder<M: ManageConnection> {
     _p: PhantomData<M>,
 }
 
+#[derive(Debug, Default)]
+pub enum QueueStrategy {
+    #[default]
+    /// First in first out
+    /// This strategy behaves like a queue
+    /// It will evenly spread load on all existing connections, resetting their idle timeouts, maintaining the pool size
+    Fifo,
+    /// Last in first out
+    /// This behaves like a stack
+    /// It will use the most recently used connection and help to keep the total pool size small by evicting idle connections
+    Lifo,
+}
+
 impl<M: ManageConnection> Default for Builder<M> {
     fn default() -> Self {
         Builder {
@@ -122,7 +127,7 @@ impl<M: ManageConnection> Default for Builder<M> {
             retry_connection: true,
             error_sink: Box::new(NopErrorSink),
             reaper_rate: Duration::from_secs(30),
-            queue_strategy: QueueStrategy::Fifo,
+            queue_strategy: QueueStrategy::default(),
             connection_customizer: None,
             _p: PhantomData,
         }
