@@ -81,13 +81,10 @@ where
         }
 
         // Queue it in the idle queue
+        let conn = IdleConn::from(guard.conn.take().unwrap());
         match self.queue_strategy {
-            QueueStrategy::FIFO => self
-                .conns
-                .push_back(IdleConn::from(guard.conn.take().unwrap())),
-            QueueStrategy::LIFO => self
-                .conns
-                .push_front(IdleConn::from(guard.conn.take().unwrap())),
+            QueueStrategy::Fifo => self.conns.push_back(conn),
+            QueueStrategy::Lifo => self.conns.push_front(conn),
         }
     }
 
@@ -170,7 +167,7 @@ where
             conns: VecDeque::new(),
             num_conns: 0,
             pending_conns: 0,
-            queue_strategy: QueueStrategy::LIFO,
+            queue_strategy: QueueStrategy::Lifo,
         }
     }
 }

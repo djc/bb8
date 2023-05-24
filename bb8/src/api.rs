@@ -77,9 +77,9 @@ impl<M: ManageConnection> Pool<M> {
 #[derive(Debug)]
 pub enum QueueStrategy {
     /// Last in first out
-    LIFO,
+    Lifo,
     /// First in first out
-    FIFO,
+    Fifo,
 }
 
 /// A builder for a connection pool.
@@ -122,7 +122,7 @@ impl<M: ManageConnection> Default for Builder<M> {
             retry_connection: true,
             error_sink: Box::new(NopErrorSink),
             reaper_rate: Duration::from_secs(30),
-            queue_strategy: QueueStrategy::FIFO,
+            queue_strategy: QueueStrategy::Fifo,
             connection_customizer: None,
             _p: PhantomData,
         }
@@ -273,7 +273,7 @@ impl<M: ManageConnection> Builder<M> {
 
     /// Sets the queue strategy to be used by the pool
     ///
-    /// Defaults to `FIFO`.
+    /// Defaults to `Fifo`.
     #[must_use]
     pub fn queue_strategy(mut self, queue_strategy: QueueStrategy) -> Self {
         self.queue_strategy = queue_strategy;
