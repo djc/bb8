@@ -74,6 +74,14 @@ impl<M: ManageConnection> Pool<M> {
     }
 }
 
+#[derive(Debug)]
+pub enum QueueStrategy {
+    /// Last in first out
+    LIFO,
+    /// First in first out
+    FIFO,
+}
+
 /// A builder for a connection pool.
 #[derive(Debug)]
 pub struct Builder<M: ManageConnection> {
@@ -95,6 +103,8 @@ pub struct Builder<M: ManageConnection> {
     pub(crate) error_sink: Box<dyn ErrorSink<M::Error>>,
     /// The time interval used to wake up and reap connections.
     pub(crate) reaper_rate: Duration,
+    /// Queue strategy (FIFO or LIFO)
+    pub(crate) queue_strategy: QueueStrategy,
     /// User-supplied trait object responsible for initializing connections
     pub(crate) connection_customizer: Option<Box<dyn CustomizeConnection<M::Connection, M::Error>>>,
     _p: PhantomData<M>,
@@ -112,6 +122,7 @@ impl<M: ManageConnection> Default for Builder<M> {
             retry_connection: true,
             error_sink: Box::new(NopErrorSink),
             reaper_rate: Duration::from_secs(30),
+            queue_strategy: QueueStrategy::FIFO,
             connection_customizer: None,
             _p: PhantomData,
         }
@@ -257,6 +268,15 @@ impl<M: ManageConnection> Builder<M> {
     #[must_use]
     pub fn reaper_rate(mut self, reaper_rate: Duration) -> Self {
         self.reaper_rate = reaper_rate;
+        self
+    }
+
+    /// Sets the queue strategy to be used by the pool
+    ///
+    /// Defaults to `LIFO`.
+    #[must_use]
+    pub fn queue_strategy(mut self, queue_strategy: QueueStrategy) -> Self {
+        self.queue_strategy = queue_strategy;
         self
     }
 

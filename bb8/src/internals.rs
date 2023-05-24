@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::lock::Mutex;
+use crate::{lock::Mutex, api::QueueStrategy};
 use futures_channel::oneshot;
 
 use crate::api::{Builder, ManageConnection};
@@ -42,6 +42,7 @@ where
     conns: VecDeque<IdleConn<M::Connection>>,
     num_conns: u32,
     pending_conns: u32,
+    queue_strategy: QueueStrategy,
 }
 
 impl<M> PoolInternals<M>
@@ -80,8 +81,14 @@ where
         }
 
         // Queue it in the idle queue
-        self.conns
-            .push_back(IdleConn::from(guard.conn.take().unwrap()));
+        match self.queue_strategy {
+            QueueStrategy::FIFO => self
+                .conns
+                .push_back(IdleConn::from(guard.conn.take().unwrap())),
+            QueueStrategy::LIFO => self
+                .conns
+                .push_front(IdleConn::from(guard.conn.take().unwrap())),
+        }
     }
 
     pub(crate) fn connect_failed(&mut self, _: Approval) {
@@ -163,6 +170,7 @@ where
             conns: VecDeque::new(),
             num_conns: 0,
             pending_conns: 0,
+            queue_strategy: QueueStrategy::LIFO,
         }
     }
 }
