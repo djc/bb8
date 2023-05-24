@@ -102,9 +102,8 @@ pub struct Builder<M: ManageConnection> {
     _p: PhantomData<M>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub enum QueueStrategy {
-    #[default]
     /// First in first out
     /// This strategy behaves like a queue
     /// It will evenly spread load on all existing connections, resetting their idle timeouts, maintaining the pool size
@@ -113,6 +112,12 @@ pub enum QueueStrategy {
     /// This behaves like a stack
     /// It will use the most recently used connection and help to keep the total pool size small by evicting idle connections
     Lifo,
+}
+
+impl Default for QueueStrategy {
+    fn default() -> Self {
+        QueueStrategy::Fifo
+    }
 }
 
 impl<M: ManageConnection> Default for Builder<M> {
