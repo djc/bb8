@@ -11,6 +11,9 @@ use crate::inner::PoolInner;
 use crate::internals::Conn;
 pub use crate::internals::State;
 
+// Default connection reaper rate
+static DEFAULT_REAPER_RATE: Duration = Duration::from_secs(30);
+
 /// A generic connection pool.
 pub struct Pool<M>
 where
@@ -111,7 +114,7 @@ impl<M: ManageConnection> Default for Builder<M> {
             connection_timeout: Duration::from_secs(30),
             retry_connection: true,
             error_sink: Box::new(NopErrorSink),
-            reaper_rate: Duration::from_secs(30),
+            reaper_rate: DEFAULT_REAPER_RATE,
             connection_customizer: None,
             _p: PhantomData,
         }
@@ -183,6 +186,11 @@ impl<M: ManageConnection> Builder<M> {
             Some(Duration::from_secs(0)),
             "max_lifetime must be greater than zero!"
         );
+
+        if let Some(max_lifetime) = max_lifetime {
+            self.reaper_rate = std::cmp::min(DEFAULT_REAPER_RATE, max_lifetime);
+        }
+
         self.max_lifetime = max_lifetime;
         self
     }
@@ -204,6 +212,11 @@ impl<M: ManageConnection> Builder<M> {
             Some(Duration::from_secs(0)),
             "idle_timeout must be greater than zero!"
         );
+
+        if let Some(idle_timeout) = idle_timeout {
+            self.reaper_rate = std::cmp::min(DEFAULT_REAPER_RATE, idle_timeout);
+        }
+
         self.idle_timeout = idle_timeout;
         self
     }
