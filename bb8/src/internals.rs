@@ -180,7 +180,7 @@ where
             conns: VecDeque::new(),
             num_conns: 0,
             pending_conns: 0,
-            queue_strategy: QueueStrategy::Lifo,
+            queue_strategy: QueueStrategy::default(),
         }
     }
 }
