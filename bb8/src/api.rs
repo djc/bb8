@@ -102,6 +102,7 @@ pub struct Builder<M: ManageConnection> {
     _p: PhantomData<M>,
 }
 
+/// bb8's queue strategy when getting pool resources
 #[derive(Debug)]
 pub enum QueueStrategy {
     /// First in first out
