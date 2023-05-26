@@ -36,7 +36,7 @@
 mod api;
 pub use api::{
     Builder, CustomizeConnection, ErrorSink, ManageConnection, NopErrorSink, Pool,
-    PooledConnection, RunError, State,
+    PooledConnection, QueueStrategy, RunError, State,
 };
 
 mod inner;
