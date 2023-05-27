@@ -146,7 +146,7 @@ where
                             make_pooled_conn(self, conn)
                         }
 
-                        // Connection is gone, go make a new one and wait.
+                        // All open connections are gone, go make a new one and wait.
                         None => break,
                     }
                 };
