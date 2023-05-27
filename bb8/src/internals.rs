@@ -99,7 +99,6 @@ where
         self.approvals(config, wanted)
     }
 
-
     pub(crate) fn push_waiter(&mut self, config: &Builder<M>) -> (Arc<Notify>, ApprovalIter) {
         let notify = self.notify.clone();
         let approvals = self.approvals(config, 1);

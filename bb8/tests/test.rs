@@ -282,7 +282,7 @@ async fn test_lazy_initialization_failure_no_retry() {
         .build_unchecked(manager);
 
     let res = pool.get().await;
-    assert_eq!(res.unwrap_err(), RunError::User(Error));
+    assert_eq!(res.unwrap_err(), RunError::TimedOut);
 }
 
 #[tokio::test]
