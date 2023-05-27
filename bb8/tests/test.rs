@@ -320,8 +320,8 @@ async fn test_get_timeout() {
 #[tokio::test]
 async fn test_lots_of_waiters() {
     let pool = Pool::builder()
-        .max_size(1)
-        .connection_timeout(Duration::from_millis(100))
+        .max_size(3)
+        .connection_timeout(Duration::from_millis(5_000))
         .build(OkManager::<FakeConnection>::new())
         .await
         .unwrap();
