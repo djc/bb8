@@ -103,7 +103,7 @@ pub struct Builder<M: ManageConnection> {
 }
 
 /// bb8's queue strategy when getting pool resources
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum QueueStrategy {
     /// First in first out
     /// This strategy behaves like a queue
