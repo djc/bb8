@@ -54,7 +54,6 @@ where
     conns: VecDeque<IdleConn<M::Connection>>,
     num_conns: u32,
     pending_conns: u32,
-    queue_strategy: QueueStrategy,
 }
 
 impl<M> PoolInternals<M>
@@ -81,6 +80,8 @@ where
             self.num_conns += 1;
         }
 
+        let queue_strategy = pool.statics.queue_strategy;
+
         let mut guard = InternalsGuard::new(conn, pool);
         while let Some(waiter) = self.waiters.pop_front() {
             // This connection is no longer idle, send it back out
@@ -95,7 +96,7 @@ where
 
         // Queue it in the idle queue
         let conn = IdleConn::from(guard.conn.take().unwrap());
-        match self.queue_strategy {
+        match queue_strategy {
             QueueStrategy::Fifo => self.conns.push_back(conn),
             QueueStrategy::Lifo => self.conns.push_front(conn),
         }
@@ -180,7 +181,6 @@ where
             conns: VecDeque::new(),
             num_conns: 0,
             pending_conns: 0,
-            queue_strategy: QueueStrategy::default(),
         }
     }
 }
