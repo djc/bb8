@@ -46,7 +46,6 @@ where
     conns: VecDeque<IdleConn<M::Connection>>,
     num_conns: u32,
     pending_conns: u32,
-    queue_strategy: QueueStrategy,
 }
 
 impl<M> PoolInternals<M>
@@ -68,9 +67,11 @@ where
             self.num_conns += 1;
         }
 
+        let queue_strategy = pool.statics.queue_strategy;
+
         // Queue it in the idle queue
-        let conn = IdleConn::from(conn);
-        match self.queue_strategy {
+        let conn = IdleConn::from(guard.conn.take().unwrap());
+        match queue_strategy {
             QueueStrategy::Fifo => self.conns.push_back(conn),
             QueueStrategy::Lifo => self.conns.push_front(conn),
         };
@@ -166,7 +167,6 @@ where
             conns: VecDeque::new(),
             num_conns: 0,
             pending_conns: 0,
-            queue_strategy: QueueStrategy::default(),
         }
     }
 }
