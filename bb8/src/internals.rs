@@ -61,7 +61,12 @@ where
             .map(|idle| (idle.conn, self.wanted(config)))
     }
 
-    pub(crate) fn put(&mut self, conn: Conn<M::Connection>, approval: Option<Approval>) {
+    pub(crate) fn put(
+        &mut self,
+        conn: Conn<M::Connection>,
+        approval: Option<Approval>,
+        pool: Arc<SharedPool<M>>,
+    ) {
         if approval.is_some() {
             self.pending_conns -= 1;
             self.num_conns += 1;
@@ -70,7 +75,7 @@ where
         let queue_strategy = pool.statics.queue_strategy;
 
         // Queue it in the idle queue
-        let conn = IdleConn::from(guard.conn.take().unwrap());
+        let conn = IdleConn::from(conn);
         match queue_strategy {
             QueueStrategy::Fifo => self.conns.push_back(conn),
             QueueStrategy::Lifo => self.conns.push_front(conn),
