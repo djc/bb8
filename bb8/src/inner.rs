@@ -201,7 +201,7 @@ where
 
         let mut locked = self.inner.internals.lock();
         match conn {
-            Some(conn) => locked.put(conn, None),
+            Some(conn) => locked.put(conn, None, self.inner.clone()),
             None => {
                 let approvals = locked.dropped(1, &self.inner.statics);
                 self.spawn_replenishing_approvals(approvals);
@@ -243,7 +243,10 @@ where
             match conn {
                 Ok(conn) => {
                     let conn = Conn::new(conn);
-                    shared.internals.lock().put(conn, Some(approval));
+                    shared
+                        .internals
+                        .lock()
+                        .put(conn, Some(approval), self.inner.clone());
                     return Ok(());
                 }
                 Err(e) => {
