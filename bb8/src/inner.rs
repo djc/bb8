@@ -4,7 +4,6 @@ use std::future::Future;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use futures_channel::oneshot;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use futures_util::TryFutureExt;
 use tokio::spawn;
@@ -106,43 +105,81 @@ where
     where
         F: Fn(&'a Self, Conn<M::Connection>) -> PooledConnection<'b, M>,
     {
+        match timeout(
+            self.inner.statics.connection_timeout,
+            self.make_pooled_internal(make_pooled_conn),
+        )
+        .await
+        {
+            Ok(result) => result,
+            _ => Err(RunError::TimedOut),
+        }
+    }
+
+    async fn make_pooled_internal<'a, 'b, F>(
+        &'a self,
+        make_pooled_conn: F,
+    ) -> Result<PooledConnection<'b, M>, RunError<M::Error>>
+    where
+        F: Fn(&'a Self, Conn<M::Connection>) -> PooledConnection<'b, M>,
+    {
         loop {
-            let mut conn = {
-                let mut locked = self.inner.internals.lock();
-                match locked.pop(&self.inner.statics) {
-                    Some((conn, approvals)) => {
-                        self.spawn_replenishing_approvals(approvals);
-                        make_pooled_conn(self, conn)
-                    }
-                    None => break,
+            loop {
+                // Get in the same queue as everyone else for a connection.
+                let waiter = {
+                    let locked = self.inner.internals.lock();
+                    locked.request_connection()
+                };
+
+                // A connection is availble, the waiter has a chance to get it.
+                if let Some(waiter) = waiter {
+                    waiter.notified().await;
                 }
+
+                // Try to get the connection if it's still availble.
+                let mut conn = {
+                    let mut locked = self.inner.internals.lock();
+
+                    match locked.pop(&self.inner.statics) {
+                        Some((conn, approvals)) => {
+                            self.spawn_replenishing_approvals(approvals);
+                            make_pooled_conn(self, conn)
+                        }
+
+                        // All open connections are gone, go make a new one and wait.
+                        None => break,
+                    }
+                };
+
+                if !self.inner.statics.test_on_check_out {
+                    return Ok(conn);
+                }
+
+                match self.inner.manager.is_valid(&mut conn).await {
+                    Ok(()) => return Ok(conn),
+                    Err(e) => {
+                        self.inner.statics.error_sink.sink(e);
+                        conn.drop_invalid();
+                        continue;
+                    }
+                }
+            }
+
+            // No connection is available, wait for one to be created for us.
+            let waiter = {
+                let mut locked = self.inner.internals.lock();
+                let (waiter, approvals) = locked.push_waiter(&self.inner.statics);
+                self.spawn_replenishing_approvals(approvals);
+                waiter
             };
 
-            if !self.inner.statics.test_on_check_out {
-                return Ok(conn);
-            }
+            waiter.notified().await;
 
-            match self.inner.manager.is_valid(&mut conn).await {
-                Ok(()) => return Ok(conn),
-                Err(e) => {
-                    self.inner.forward_error(e);
-                    conn.drop_invalid();
-                    continue;
-                }
-            }
-        }
-
-        let (tx, rx) = oneshot::channel();
-        {
-            let mut locked = self.inner.internals.lock();
-            let approvals = locked.push_waiter(tx, &self.inner.statics);
-            self.spawn_replenishing_approvals(approvals);
-        };
-
-        match timeout(self.inner.statics.connection_timeout, rx).await {
-            Ok(Ok(Ok(mut guard))) => Ok(make_pooled_conn(self, guard.extract())),
-            Ok(Ok(Err(e))) => Err(RunError::User(e)),
-            _ => Err(RunError::TimedOut),
+            // Did we get it? No? Let's keep waiting.
+            match self.inner.internals.lock().pop(&self.inner.statics) {
+                Some(conn) => return Ok(make_pooled_conn(self, conn.0)),
+                None => continue,
+            };
         }
     }
 

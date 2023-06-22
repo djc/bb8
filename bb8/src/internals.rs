@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::{api::QueueStrategy, lock::Mutex};
-use futures_channel::oneshot;
+use tokio::sync::Notify;
 
 use crate::api::{Builder, ManageConnection};
 use std::collections::VecDeque;
@@ -31,15 +31,7 @@ where
         }
     }
 
-    pub(crate) fn forward_error(&self, mut err: M::Error) {
-        let mut locked = self.internals.lock();
-        while let Some(waiter) = locked.waiters.pop_front() {
-            match waiter.send(Err(err)) {
-                Ok(_) => return,
-                Err(Err(e)) => err = e,
-                Err(Ok(_)) => unreachable!(),
-            }
-        }
+    pub(crate) fn forward_error(&self, err: M::Error) {
         self.statics.error_sink.sink(err);
     }
 }
@@ -50,7 +42,7 @@ pub(crate) struct PoolInternals<M>
 where
     M: ManageConnection,
 {
-    waiters: VecDeque<oneshot::Sender<Result<InternalsGuard<M>, M::Error>>>,
+    notify: Arc<Notify>,
     conns: VecDeque<IdleConn<M::Connection>>,
     num_conns: u32,
     pending_conns: u32,
@@ -82,23 +74,13 @@ where
 
         let queue_strategy = pool.statics.queue_strategy;
 
-        let mut guard = InternalsGuard::new(conn, pool);
-        while let Some(waiter) = self.waiters.pop_front() {
-            // This connection is no longer idle, send it back out
-            match waiter.send(Ok(guard)) {
-                Ok(()) => return,
-                Err(Ok(g)) => {
-                    guard = g;
-                }
-                Err(Err(_)) => unreachable!(),
-            }
-        }
-
         // Queue it in the idle queue
         match queue_strategy {
             QueueStrategy::Fifo => self.conns.push_back(IdleConn::from(guard.conn.take().unwrap())),
             QueueStrategy::Lifo => self.conns.push_front(IdleConn::from(guard.conn.take().unwrap())),
         };
+
+        self.notify.notify_one()
     }
 
     pub(crate) fn connect_failed(&mut self, _: Approval) {
@@ -122,13 +104,22 @@ where
         self.approvals(config, wanted)
     }
 
-    pub(crate) fn push_waiter(
-        &mut self,
-        waiter: oneshot::Sender<Result<InternalsGuard<M>, M::Error>>,
-        config: &Builder<M>,
-    ) -> ApprovalIter {
-        self.waiters.push_back(waiter);
-        self.approvals(config, 1)
+    pub(crate) fn push_waiter(&mut self, config: &Builder<M>) -> (Arc<Notify>, ApprovalIter) {
+        let notify = self.notify.clone();
+        let approvals = self.approvals(config, 1);
+
+        (notify, approvals)
+    }
+
+    pub(crate) fn request_connection(&self) -> Option<Arc<Notify>> {
+        let notify = self.notify.clone();
+
+        if !self.conns.is_empty() {
+            self.notify.notify_one();
+            Some(notify)
+        } else {
+            None
+        }
     }
 
     fn approvals(&mut self, config: &Builder<M>, num: u32) -> ApprovalIter {
@@ -176,37 +167,10 @@ where
 {
     fn default() -> Self {
         Self {
-            waiters: VecDeque::new(),
+            notify: Arc::new(Notify::new()),
             conns: VecDeque::new(),
             num_conns: 0,
             pending_conns: 0,
-        }
-    }
-}
-
-pub(crate) struct InternalsGuard<M: ManageConnection> {
-    conn: Option<Conn<M::Connection>>,
-    pool: Arc<SharedPool<M>>,
-}
-
-impl<M: ManageConnection> InternalsGuard<M> {
-    fn new(conn: Conn<M::Connection>, pool: Arc<SharedPool<M>>) -> Self {
-        Self {
-            conn: Some(conn),
-            pool,
-        }
-    }
-
-    pub(crate) fn extract(&mut self) -> Conn<M::Connection> {
-        self.conn.take().unwrap() // safe: can only be `None` after `Drop`
-    }
-}
-
-impl<M: ManageConnection> Drop for InternalsGuard<M> {
-    fn drop(&mut self) {
-        if let Some(conn) = self.conn.take() {
-            let mut locked = self.pool.internals.lock();
-            locked.put(conn, None, self.pool.clone());
         }
     }
 }

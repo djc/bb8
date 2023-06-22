@@ -282,7 +282,7 @@ async fn test_lazy_initialization_failure_no_retry() {
         .build_unchecked(manager);
 
     let res = pool.get().await;
-    assert_eq!(res.unwrap_err(), RunError::User(Error));
+    assert_eq!(res.unwrap_err(), RunError::TimedOut);
 }
 
 #[tokio::test]
@@ -315,6 +315,55 @@ async fn test_get_timeout() {
     tx2.send(()).unwrap();
     let r: Result<(), ()> = Ok(());
     ready(r).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_lots_of_waiters() {
+    let pool = Pool::builder()
+        .max_size(3)
+        .connection_timeout(Duration::from_millis(5_000))
+        .build(OkManager::<FakeConnection>::new())
+        .await
+        .unwrap();
+
+    let mut waiters: Vec<oneshot::Receiver<()>> = Vec::new();
+
+    for _ in 0..25000 {
+        let pool = pool.clone();
+        let (tx, rx) = oneshot::channel();
+        waiters.push(rx);
+        tokio::spawn(async move {
+            let _conn = pool.get().await.unwrap();
+            tx.send(()).unwrap();
+        });
+    }
+
+    let results = futures_util::future::join_all(&mut waiters).await;
+
+    for result in results {
+        assert!(result.is_ok());
+    }
+}
+
+#[tokio::test]
+async fn test_timeout_caller() {
+    let pool = Pool::builder()
+        .max_size(1)
+        .connection_timeout(Duration::from_millis(5_000))
+        .build(OkManager::<FakeConnection>::new())
+        .await
+        .unwrap();
+
+    let one = pool.get().await;
+    assert!(one.is_ok());
+
+    let res = tokio::time::timeout(Duration::from_millis(100), pool.get()).await;
+    assert!(res.is_err());
+
+    drop(one);
+
+    let two = pool.get().await;
+    assert!(two.is_ok());
 }
 
 #[tokio::test]
