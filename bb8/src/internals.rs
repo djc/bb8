@@ -95,11 +95,10 @@ where
         }
 
         // Queue it in the idle queue
-        let conn = IdleConn::from(guard.conn.take().unwrap());
         match queue_strategy {
-            QueueStrategy::Fifo => self.conns.push_back(conn),
-            QueueStrategy::Lifo => self.conns.push_front(conn),
-        }
+            QueueStrategy::Fifo => self.conns.push_back(IdleConn::from(guard.conn.take().unwrap())),
+            QueueStrategy::Lifo => self.conns.push_front(IdleConn::from(guard.conn.take().unwrap())),
+        };
     }
 
     pub(crate) fn connect_failed(&mut self, _: Approval) {
