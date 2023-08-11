@@ -103,22 +103,17 @@ pub struct Builder<M: ManageConnection> {
 }
 
 /// bb8's queue strategy when getting pool resources
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub enum QueueStrategy {
     /// First in first out
     /// This strategy behaves like a queue
     /// It will evenly spread load on all existing connections, resetting their idle timeouts, maintaining the pool size
+    #[default]
     Fifo,
     /// Last in first out
     /// This behaves like a stack
     /// It will use the most recently used connection and help to keep the total pool size small by evicting idle connections
     Lifo,
-}
-
-impl Default for QueueStrategy {
-    fn default() -> Self {
-        QueueStrategy::Fifo
-    }
 }
 
 impl<M: ManageConnection> Default for Builder<M> {
