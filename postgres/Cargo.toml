@@ -26,5 +26,5 @@ tokio-postgres = "0.7"
 
 [dev-dependencies]
 futures-util = "0.3.2"
-hyper = { version = "0.14.1", features = ["http1", "server", "tcp"] }
+hyper = { version = "1.0.0", features = ["http1", "server", "tcp"] }
 tokio = { version = "1.0.0", features = ["macros", "rt-multi-thread"] }
