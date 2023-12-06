@@ -4,3 +4,4 @@ members = [
     "postgres",
     "redis",
 ]
+resolver = "2"
