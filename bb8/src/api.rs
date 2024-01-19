@@ -165,8 +165,11 @@ impl<M: ManageConnection> Builder<M> {
     ///
     /// Defaults to None.
     #[must_use]
-    pub fn min_idle(mut self, min_idle: Option<u32>) -> Self {
-        self.min_idle = min_idle;
+    pub fn min_idle<U>(mut self, min_idle: U) -> Self
+    where
+        U: Into<Option<u32>>,
+    {
+        self.min_idle = min_idle.into();
         self
     }
 
@@ -194,7 +197,11 @@ impl<M: ManageConnection> Builder<M> {
     ///
     /// Will panic if `max_lifetime` is 0.
     #[must_use]
-    pub fn max_lifetime(mut self, max_lifetime: Option<Duration>) -> Self {
+    pub fn max_lifetime<D>(mut self, max_lifetime: D) -> Self
+    where
+        D: Into<Option<Duration>>,
+    {
+        let max_lifetime = max_lifetime.into();
         assert_ne!(
             max_lifetime,
             Some(Duration::from_secs(0)),
@@ -215,7 +222,11 @@ impl<M: ManageConnection> Builder<M> {
     ///
     /// Will panic if `idle_timeout` is 0.
     #[must_use]
-    pub fn idle_timeout(mut self, idle_timeout: Option<Duration>) -> Self {
+    pub fn idle_timeout<D>(mut self, idle_timeout: D) -> Self
+    where
+        D: Into<Option<Duration>>,
+    {
+        let idle_timeout = idle_timeout.into();
         assert_ne!(
             idle_timeout,
             Some(Duration::from_secs(0)),
