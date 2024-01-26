@@ -111,15 +111,12 @@ where
         make_pooled_conn: impl Fn(&'a Self, Conn<M::Connection>) -> PooledConnection<'b, M>,
     ) -> Result<PooledConnection<'b, M>, RunError<M::Error>> {
         loop {
-            let mut conn = {
-                let mut locked = self.inner.internals.lock();
-                match locked.pop(&self.inner.statics) {
-                    Some((conn, approvals)) => {
-                        self.spawn_replenishing_approvals(approvals);
-                        make_pooled_conn(self, conn)
-                    }
-                    None => break,
+            let mut conn = match self.inner.pop() {
+                Some((conn, approvals)) => {
+                    self.spawn_replenishing_approvals(approvals);
+                    make_pooled_conn(self, conn)
                 }
+                None => break,
             };
 
             if !self.inner.statics.test_on_check_out {

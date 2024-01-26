@@ -31,6 +31,12 @@ where
         }
     }
 
+    pub(crate) fn pop(&self) -> Option<(Conn<M::Connection>, ApprovalIter)> {
+        let mut locked = self.internals.lock();
+        let idle = locked.conns.pop_front()?;
+        Some((idle.conn, locked.wanted(&self.statics)))
+    }
+
     pub(crate) fn forward_error(&self, mut err: M::Error) {
         let mut locked = self.internals.lock();
         while let Some(waiter) = locked.waiters.pop_front() {
@@ -60,15 +66,6 @@ impl<M> PoolInternals<M>
 where
     M: ManageConnection,
 {
-    pub(crate) fn pop(
-        &mut self,
-        config: &Builder<M>,
-    ) -> Option<(Conn<M::Connection>, ApprovalIter)> {
-        self.conns
-            .pop_front()
-            .map(|idle| (idle.conn, self.wanted(config)))
-    }
-
     pub(crate) fn put(
         &mut self,
         conn: Conn<M::Connection>,
