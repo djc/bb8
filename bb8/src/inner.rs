@@ -4,7 +4,6 @@ use std::future::Future;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use futures_channel::oneshot;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use futures_util::TryFutureExt;
 use tokio::spawn;
@@ -111,12 +110,14 @@ where
         make_pooled_conn: impl Fn(&'a Self, Conn<M::Connection>) -> PooledConnection<'b, M>,
     ) -> Result<PooledConnection<'b, M>, RunError<M::Error>> {
         loop {
-            let mut conn = match self.inner.pop() {
-                Some((conn, approvals)) => {
-                    self.spawn_replenishing_approvals(approvals);
-                    make_pooled_conn(self, conn)
+            let (conn, approvals) = self.inner.pop();
+            self.spawn_replenishing_approvals(approvals);
+            let mut conn = match conn {
+                Some(conn) => make_pooled_conn(self, conn),
+                None => {
+                    self.inner.notify.notified().await;
+                    continue;
                 }
-                None => break,
             };
 
             if !self.inner.statics.test_on_check_out {
@@ -131,19 +132,6 @@ where
                     continue;
                 }
             }
-        }
-
-        let (tx, rx) = oneshot::channel();
-        {
-            let mut locked = self.inner.internals.lock();
-            let approvals = locked.push_waiter(tx, &self.inner.statics);
-            self.spawn_replenishing_approvals(approvals);
-        };
-
-        match rx.await {
-            Ok(Ok(mut guard)) => Ok(make_pooled_conn(self, guard.extract())),
-            Ok(Err(e)) => Err(RunError::User(e)),
-            Err(_) => Err(RunError::TimedOut),
         }
     }
 
