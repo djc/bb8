@@ -83,8 +83,7 @@ where
     }
 
     pub(crate) async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
-        self.make_pooled(|this, conn| PooledConnection::new(this, conn))
-            .await
+        self.make_pooled(PooledConnection::new).await
     }
 
     pub(crate) async fn get_owned(
@@ -99,13 +98,10 @@ where
         .await
     }
 
-    pub(crate) async fn make_pooled<'a, 'b, F>(
+    pub(crate) async fn make_pooled<'a, 'b>(
         &'a self,
-        make_pooled_conn: F,
-    ) -> Result<PooledConnection<'b, M>, RunError<M::Error>>
-    where
-        F: Fn(&'a Self, Conn<M::Connection>) -> PooledConnection<'b, M>,
-    {
+        make_pooled_conn: impl Fn(&'a Self, Conn<M::Connection>) -> PooledConnection<'b, M>,
+    ) -> Result<PooledConnection<'b, M>, RunError<M::Error>> {
         loop {
             let mut conn = {
                 let mut locked = self.inner.internals.lock();
