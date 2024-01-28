@@ -89,22 +89,6 @@ where
         }
     }
 
-    pub(crate) async fn get_owned(
-        &self,
-    ) -> Result<PooledConnection<'static, M>, RunError<M::Error>> {
-        let future = self.make_pooled(|this, conn| {
-            let pool = PoolInner {
-                inner: Arc::clone(&this.inner),
-            };
-            PooledConnection::new_owned(pool, conn)
-        });
-
-        match timeout(self.inner.statics.connection_timeout, future).await {
-            Ok(result) => result,
-            _ => Err(RunError::TimedOut),
-        }
-    }
-
     pub(crate) async fn make_pooled<'a, 'b>(
         &'a self,
         make_pooled_conn: impl Fn(&'a Self, Conn<M::Connection>) -> PooledConnection<'b, M>,
