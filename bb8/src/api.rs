@@ -60,7 +60,10 @@ impl<M: ManageConnection> Pool<M> {
     /// Using an owning `PooledConnection` makes it easier to leak the connection pool. Therefore, [`Pool::get`]
     /// (which stores a lifetime-bound reference to the pool) should be preferred whenever possible.
     pub async fn get_owned(&self) -> Result<PooledConnection<'static, M>, RunError<M::Error>> {
-        self.inner.get_owned().await
+        Ok(PooledConnection {
+            conn: self.get().await?.take(),
+            pool: Cow::Owned(self.inner.clone()),
+        })
     }
 
     /// Get a new dedicated connection that will not be managed by the pool.
@@ -385,17 +388,9 @@ where
     pub(crate) fn drop_invalid(mut self) {
         let _ = self.conn.take();
     }
-}
 
-impl<M> PooledConnection<'static, M>
-where
-    M: ManageConnection,
-{
-    pub(crate) fn new_owned(pool: PoolInner<M>, conn: Conn<M::Connection>) -> Self {
-        Self {
-            pool: Cow::Owned(pool),
-            conn: Some(conn),
-        }
+    pub(crate) fn take(&mut self) -> Option<Conn<M::Connection>> {
+        self.conn.take()
     }
 }
 
