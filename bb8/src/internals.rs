@@ -44,6 +44,11 @@ where
         (conn, approvals)
     }
 
+    pub(crate) fn reap(&self) -> ApprovalIter {
+        let mut locked = self.internals.lock();
+        locked.reap(&self.statics)
+    }
+
     pub(crate) fn forward_error(&self, err: M::Error) {
         self.statics.error_sink.sink(err);
     }
