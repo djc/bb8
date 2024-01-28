@@ -149,12 +149,6 @@ where
         self.inner.internals.lock().state()
     }
 
-    fn reap(&self) {
-        let mut internals = self.inner.internals.lock();
-        let approvals = internals.reap(&self.inner.statics);
-        self.spawn_replenishing_approvals(approvals);
-    }
-
     // Outside of Pool to avoid borrow splitting issues on self
     async fn add_connection(&self, approval: Approval) -> Result<(), M::Error>
     where
@@ -238,11 +232,16 @@ impl<M: ManageConnection> Reaper<M> {
     async fn run(mut self) {
         loop {
             let _ = self.interval.tick().await;
-            if let Some(inner) = self.pool.upgrade() {
-                PoolInner { inner }.reap();
-            } else {
-                break;
-            }
+            let pool = match self.pool.upgrade() {
+                Some(inner) => PoolInner { inner },
+                None => break,
+            };
+
+            let mut locked = pool.inner.internals.lock();
+            let approvals = locked.reap(&pool.inner.statics);
+            drop(locked);
+
+            pool.spawn_replenishing_approvals(approvals);
         }
     }
 }
