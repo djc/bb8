@@ -82,40 +82,36 @@ where
     }
 
     pub(crate) async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
-        let future = self.make_pooled(PooledConnection::new);
+        let future = async {
+            loop {
+                let (conn, approvals) = self.inner.pop();
+                self.spawn_replenishing_approvals(approvals);
+                let mut conn = match conn {
+                    Some(conn) => PooledConnection::new(self, conn),
+                    None => {
+                        self.inner.notify.notified().await;
+                        continue;
+                    }
+                };
+
+                if !self.inner.statics.test_on_check_out {
+                    return Ok(conn);
+                }
+
+                match self.inner.manager.is_valid(&mut conn).await {
+                    Ok(()) => return Ok(conn),
+                    Err(e) => {
+                        self.inner.forward_error(e);
+                        conn.drop_invalid();
+                        continue;
+                    }
+                }
+            }
+        };
+
         match timeout(self.inner.statics.connection_timeout, future).await {
             Ok(result) => result,
             _ => Err(RunError::TimedOut),
-        }
-    }
-
-    pub(crate) async fn make_pooled<'a, 'b>(
-        &'a self,
-        make_pooled_conn: impl Fn(&'a Self, Conn<M::Connection>) -> PooledConnection<'b, M>,
-    ) -> Result<PooledConnection<'b, M>, RunError<M::Error>> {
-        loop {
-            let (conn, approvals) = self.inner.pop();
-            self.spawn_replenishing_approvals(approvals);
-            let mut conn = match conn {
-                Some(conn) => make_pooled_conn(self, conn),
-                None => {
-                    self.inner.notify.notified().await;
-                    continue;
-                }
-            };
-
-            if !self.inner.statics.test_on_check_out {
-                return Ok(conn);
-            }
-
-            match self.inner.manager.is_valid(&mut conn).await {
-                Ok(()) => return Ok(conn),
-                Err(e) => {
-                    self.inner.forward_error(e);
-                    conn.drop_invalid();
-                    continue;
-                }
-            }
         }
     }
 
