@@ -27,12 +27,9 @@ where
         let inner = Arc::new(SharedPool::new(builder, manager));
 
         if inner.statics.max_lifetime.is_some() || inner.statics.idle_timeout.is_some() {
-            let s = Arc::downgrade(&inner);
-            if let Some(shared) = s.upgrade() {
-                let start = Instant::now() + shared.statics.reaper_rate;
-                let interval = interval_at(start.into(), shared.statics.reaper_rate);
-                schedule_reaping(interval, s);
-            }
+            let start = Instant::now() + inner.statics.reaper_rate;
+            let interval = interval_at(start.into(), inner.statics.reaper_rate);
+            schedule_reaping(interval, Arc::downgrade(&inner));
         }
 
         Self { inner }
