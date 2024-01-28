@@ -237,10 +237,7 @@ impl<M: ManageConnection> Reaper<M> {
                 None => break,
             };
 
-            let mut locked = pool.inner.internals.lock();
-            let approvals = locked.reap(&pool.inner.statics);
-            drop(locked);
-
+            let approvals = pool.inner.reap();
             pool.spawn_replenishing_approvals(approvals);
         }
     }
