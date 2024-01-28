@@ -29,7 +29,13 @@ where
         if inner.statics.max_lifetime.is_some() || inner.statics.idle_timeout.is_some() {
             let start = Instant::now() + inner.statics.reaper_rate;
             let interval = interval_at(start.into(), inner.statics.reaper_rate);
-            schedule_reaping(interval, Arc::downgrade(&inner));
+            tokio::spawn(
+                Reaper {
+                    interval,
+                    pool: Arc::downgrade(&inner),
+                }
+                .run(),
+            );
         }
 
         Self { inner }
@@ -223,18 +229,20 @@ where
     }
 }
 
-fn schedule_reaping<M>(mut interval: Interval, weak_shared: Weak<SharedPool<M>>)
-where
-    M: ManageConnection,
-{
-    spawn(async move {
+struct Reaper<M: ManageConnection> {
+    interval: Interval,
+    pool: Weak<SharedPool<M>>,
+}
+
+impl<M: ManageConnection> Reaper<M> {
+    async fn run(mut self) {
         loop {
-            let _ = interval.tick().await;
-            if let Some(inner) = weak_shared.upgrade() {
+            let _ = self.interval.tick().await;
+            if let Some(inner) = self.pool.upgrade() {
                 PoolInner { inner }.reap();
             } else {
                 break;
             }
         }
-    });
+    }
 }
