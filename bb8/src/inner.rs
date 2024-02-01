@@ -89,6 +89,10 @@ where
             loop {
                 let (conn, approvals) = self.inner.pop();
                 self.spawn_replenishing_approvals(approvals);
+
+                // Cancellation safety: make sure to wrap the connection in a `PooledConnection`
+                // before allowing the code to hit an `await`, so we don't lose the connection.
+
                 let mut conn = match conn {
                     Some(conn) => PooledConnection::new(self, conn),
                     None => {
