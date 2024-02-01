@@ -63,6 +63,7 @@ impl<M: ManageConnection> Pool<M> {
         Ok(PooledConnection {
             conn: self.get().await?.take(),
             pool: Cow::Owned(self.inner.clone()),
+            state: ConnectionState::Present,
         })
     }
 
@@ -372,6 +373,7 @@ where
 {
     pool: Cow<'a, PoolInner<M>>,
     conn: Option<Conn<M::Connection>>,
+    pub(crate) state: ConnectionState,
 }
 
 impl<'a, M> PooledConnection<'a, M>
@@ -382,14 +384,12 @@ where
         Self {
             pool: Cow::Borrowed(pool),
             conn: Some(conn),
+            state: ConnectionState::Present,
         }
     }
 
-    pub(crate) fn drop_invalid(mut self) {
-        let _ = self.conn.take();
-    }
-
-    pub(crate) fn take(&mut self) -> Option<Conn<M::Connection>> {
+    pub(crate) fn take(mut self) -> Option<Conn<M::Connection>> {
+        self.state = ConnectionState::Extracted;
         self.conn.take()
     }
 }
@@ -429,8 +429,22 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        self.pool.as_ref().put_back(self.conn.take());
+        if let ConnectionState::Extracted = self.state {
+            return;
+        }
+
+        debug_assert!(self.conn.is_some(), "incorrect state {:?}", self.state);
+        if let Some(conn) = self.conn.take() {
+            self.pool.as_ref().put_back(conn, self.state);
+        }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ConnectionState {
+    Present,
+    Extracted,
+    Invalid,
 }
 
 /// bb8's error type.
