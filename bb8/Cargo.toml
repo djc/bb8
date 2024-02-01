@@ -1,6 +1,6 @@
 [package]
 name = "bb8"
-version = "0.8.2"
+version = "0.8.3"
 edition = "2021"
 rust-version = "1.63"
 description = "Full-featured async (tokio-based) connection pool (like r2d2)"
