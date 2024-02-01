@@ -9,7 +9,7 @@ use futures_util::TryFutureExt;
 use tokio::spawn;
 use tokio::time::{interval_at, sleep, timeout, Interval};
 
-use crate::api::{Builder, ManageConnection, PooledConnection, RunError};
+use crate::api::{Builder, ConnectionState, ManageConnection, PooledConnection, RunError};
 use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, State};
 
 pub(crate) struct PoolInner<M>
@@ -109,7 +109,7 @@ where
                     Ok(()) => return Ok(conn),
                     Err(e) => {
                         self.inner.forward_error(e);
-                        conn.drop_invalid();
+                        conn.state = ConnectionState::Invalid;
                         continue;
                     }
                 }
@@ -129,19 +129,16 @@ where
     }
 
     /// Return connection back in to the pool
-    pub(crate) fn put_back(&self, conn: Option<Conn<M::Connection>>) {
-        let conn = conn.and_then(|mut conn| {
-            if !self.inner.manager.has_broken(&mut conn.conn) {
-                Some(conn)
-            } else {
-                None
-            }
-        });
+    pub(crate) fn put_back(&self, mut conn: Conn<M::Connection>, state: ConnectionState) {
+        debug_assert!(
+            !matches!(state, ConnectionState::Extracted),
+            "handled in caller"
+        );
 
         let mut locked = self.inner.internals.lock();
-        match conn {
-            Some(conn) => locked.put(conn, None, self.inner.clone()),
-            None => {
+        match (state, self.inner.manager.has_broken(&mut conn.conn)) {
+            (ConnectionState::Present, false) => locked.put(conn, None, self.inner.clone()),
+            (_, _) => {
                 let approvals = locked.dropped(1, &self.inner.statics);
                 self.spawn_replenishing_approvals(approvals);
             }
