@@ -76,8 +76,16 @@ where
         pool: Arc<SharedPool<M>>,
     ) {
         if approval.is_some() {
-            self.pending_conns -= 1;
-            self.num_conns += 1;
+            #[cfg(debug_assertions)]
+            {
+                self.pending_conns -= 1;
+                self.num_conns += 1;
+            }
+            #[cfg(not(debug_assertions))]
+            {
+                self.pending_conns = self.pending_conns.saturating_sub(1);
+                self.num_conns = self.num_conns.saturating_add(1);
+            }
         }
 
         // Queue it in the idle queue
@@ -91,11 +99,26 @@ where
     }
 
     pub(crate) fn connect_failed(&mut self, _: Approval) {
-        self.pending_conns -= 1;
+        #[cfg(debug_assertions)]
+        {
+            self.pending_conns -= 1;
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            self.pending_conns = self.pending_conns.saturating_sub(1);
+        }
     }
 
     pub(crate) fn dropped(&mut self, num: u32, config: &Builder<M>) -> ApprovalIter {
-        self.num_conns -= num;
+        #[cfg(debug_assertions)]
+        {
+            self.num_conns -= num;
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            self.num_conns = self.num_conns.saturating_sub(num);
+        }
+
         self.wanted(config)
     }
 
