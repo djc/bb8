@@ -11,10 +11,9 @@ use std::time::Duration;
 use std::{error, fmt};
 
 use async_trait::async_trait;
-use futures_channel::oneshot;
 use futures_util::future::{err, lazy, ok, pending, ready, try_join_all, FutureExt};
 use futures_util::stream::{FuturesUnordered, TryStreamExt};
-use tokio::time::timeout;
+use tokio::{time::timeout, sync::oneshot};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Error;
