@@ -10,8 +10,29 @@ repository = "https://github.com/djc/bb8"
 [dependencies]
 async-trait = "0.1"
 bb8 = { version = "0.8", path = "../bb8" }
-redis = { version = "0.24", default-features = false, features = ["tokio-comp"] }
+redis = { version = "0.24", default-features = false, features = [
+  "tokio-comp",
+] }
 
 [dev-dependencies]
 futures-util = "0.3.15"
 tokio = { version = "1.0.0", features = ["macros", "rt-multi-thread"] }
+
+[features]
+default = ["redis/default"]
+acl = ["redis/acl"]
+aio = ["redis/aio"]
+geospatial = ["redis/geospatial"]
+json = ["redis/json"]
+cluster = ["redis/cluster"]
+script = ["redis/script"]
+tls-native-tls = ["redis/tls-native-tls", "redis/tokio-native-tls"]
+tls-rustls = ["redis/tls-rustls", "redis/tokio-rustls"]
+tls-rustls-insecure = ["redis/tls-rustls-insecure"]
+tls-rustls-webpki-roots = ["redis/tls-rustls-webpki-roots"]
+connection-manager = ["redis/connection-manager"]
+streams = ["redis/streams"]
+cluster-async = ["redis/cluster-async"]
+keep-alive = ["redis/keep-alive"]
+sentinel = ["redis/sentinel"]
+tcp_nodelay = ["redis/tcp_nodelay"]
