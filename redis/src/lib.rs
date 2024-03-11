@@ -51,8 +51,8 @@ pub struct RedisConnectionManager {
 impl RedisConnectionManager {
     /// Create a new `RedisConnectionManager`.
     /// See `redis::Client::open` for a description of the parameter types.
-    pub fn new<T: IntoConnectionInfo>(info: T) -> Result<RedisConnectionManager, RedisError> {
-        Ok(RedisConnectionManager {
+    pub fn new<T: IntoConnectionInfo>(info: T) -> Result<Self, RedisError> {
+        Ok(Self {
             client: Client::open(info.into_connection_info()?)?,
         })
     }
