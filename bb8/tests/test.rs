@@ -1,7 +1,6 @@
 use bb8::*;
 
 use std::future::Future;
-use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
