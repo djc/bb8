@@ -830,3 +830,58 @@ async fn test_customize_connection_acquire() {
     let connection_1_or_2 = pool.get().await.unwrap();
     assert!(connection_1_or_2.custom_field == 1 || connection_1_or_2.custom_field == 2);
 }
+
+#[tokio::test]
+async fn test_broken_connections_dont_starve_pool() {
+    use std::sync::RwLock;
+    use std::{convert::Infallible, time::Duration};
+
+    #[derive(Default)]
+    struct ConnectionManager {
+        counter: RwLock<u16>,
+    }
+    #[derive(Debug)]
+    struct Connection;
+
+    #[async_trait::async_trait]
+    impl bb8::ManageConnection for ConnectionManager {
+        type Connection = Connection;
+        type Error = Infallible;
+
+        async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+            Ok(Connection)
+        }
+
+        async fn is_valid(&self, _: &mut Self::Connection) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn has_broken(&self, _: &mut Self::Connection) -> bool {
+            let mut counter = self.counter.write().unwrap();
+            let res = *counter < 5;
+            *counter += 1;
+            res
+        }
+    }
+
+    let pool = bb8::Pool::builder()
+        .max_size(5)
+        .connection_timeout(Duration::from_secs(10))
+        .build(ConnectionManager::default())
+        .await
+        .unwrap();
+
+    let mut futures = Vec::new();
+
+    for _ in 0..10 {
+        let pool = pool.clone();
+        futures.push(tokio::spawn(async move {
+            let conn = pool.get().await.unwrap();
+            drop(conn);
+        }));
+    }
+
+    for future in futures {
+        future.await.unwrap();
+    }
+}
