@@ -10,7 +10,7 @@ use tokio::spawn;
 use tokio::time::{interval_at, sleep, timeout, Interval};
 
 use crate::api::{Builder, ConnectionState, ManageConnection, PooledConnection, RunError, State};
-use crate::internals::{Approval, ApprovalIter, Conn, SharedPool};
+use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, StatsKind};
 
 pub(crate) struct PoolInner<M>
 where
@@ -85,6 +85,8 @@ where
     }
 
     pub(crate) async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
+        let mut kind = StatsKind::Direct;
+
         let future = async {
             loop {
                 let (conn, approvals) = self.inner.pop();
@@ -96,6 +98,7 @@ where
                 let mut conn = match conn {
                     Some(conn) => PooledConnection::new(self, conn),
                     None => {
+                        kind = StatsKind::Waited;
                         self.inner.notify.notified().await;
                         continue;
                     }
@@ -116,10 +119,16 @@ where
             }
         };
 
-        match timeout(self.inner.statics.connection_timeout, future).await {
+        let result = match timeout(self.inner.statics.connection_timeout, future).await {
             Ok(result) => result,
-            _ => Err(RunError::TimedOut),
-        }
+            _ => {
+                kind = StatsKind::TimedOut;
+                Err(RunError::TimedOut)
+            }
+        };
+
+        self.inner.statistics.record(kind);
+        result
     }
 
     pub(crate) async fn connect(&self) -> Result<M::Connection, M::Error> {
@@ -148,7 +157,10 @@ where
 
     /// Returns information about the current state of the pool.
     pub(crate) fn state(&self) -> State {
-        (&*self.inner.internals.lock()).into()
+        self.inner
+            .internals
+            .lock()
+            .state((&self.inner.statistics).into())
     }
 
     // Outside of Pool to avoid borrow splitting issues on self

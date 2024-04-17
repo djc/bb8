@@ -885,3 +885,43 @@ async fn test_broken_connections_dont_starve_pool() {
         future.await.unwrap();
     }
 }
+
+#[tokio::test]
+async fn test_state_get_contention() {
+    let pool = Pool::builder()
+        .max_size(1)
+        .min_idle(1)
+        .build(OkManager::<FakeConnection>::new())
+        .await
+        .unwrap();
+
+    let (tx1, rx1) = oneshot::channel();
+    let (tx2, rx2) = oneshot::channel();
+    let clone = pool.clone();
+    tokio::spawn(async move {
+        let conn = clone.get().await.unwrap();
+        tx1.send(()).unwrap();
+        let _ = rx2
+            .then(|r| match r {
+                Ok(v) => ok((v, conn)),
+                Err(_) => err((Error, conn)),
+            })
+            .await;
+    });
+
+    // Get the first connection.
+    rx1.await.unwrap();
+
+    // Now try to get a new connection without waiting.
+    let f = pool.get();
+
+    // Release the first connection.
+    tx2.send(()).unwrap();
+
+    // Wait for the second attempt to get a connection.
+    f.await.unwrap();
+
+    let statistics = pool.state().statistics;
+    assert_eq!(statistics.get_direct, 1);
+    assert_eq!(statistics.get_waited, 1);
+}

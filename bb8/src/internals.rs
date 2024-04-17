@@ -1,12 +1,13 @@
 use std::cmp::min;
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::{api::QueueStrategy, lock::Mutex};
 use tokio::sync::Notify;
 
-use crate::api::{Builder, ManageConnection, State};
-use std::collections::VecDeque;
+use crate::api::{Builder, ManageConnection, QueueStrategy, State, Statistics};
+use crate::lock::Mutex;
 
 /// The guts of a `Pool`.
 #[allow(missing_debug_implementations)]
@@ -18,6 +19,7 @@ where
     pub(crate) manager: M,
     pub(crate) internals: Mutex<PoolInternals<M>>,
     pub(crate) notify: Arc<Notify>,
+    pub(crate) statistics: AtomicStatistics,
 }
 
 impl<M> SharedPool<M>
@@ -30,6 +32,7 @@ where
             manager,
             internals: Mutex::new(PoolInternals::default()),
             notify: Arc::new(Notify::new()),
+            statistics: AtomicStatistics::default(),
         }
     }
 
@@ -153,14 +156,12 @@ where
 
         self.dropped((before - self.conns.len()) as u32, config)
     }
-}
 
-#[allow(clippy::from_over_into)] // Keep this more private with the internal type
-impl<M: ManageConnection> Into<State> for &PoolInternals<M> {
-    fn into(self) -> State {
+    pub(crate) fn state(&self, statistics: Statistics) -> State {
         State {
             connections: self.num_conns,
             idle_connections: self.conns.len() as u32,
+            statistics,
         }
     }
 }
@@ -247,4 +248,37 @@ impl<C: Send> From<Conn<C>> for IdleConn<C> {
             idle_start: Instant::now(),
         }
     }
+}
+
+#[derive(Default)]
+pub(crate) struct AtomicStatistics {
+    pub(crate) get_direct: AtomicU64,
+    pub(crate) get_waited: AtomicU64,
+    pub(crate) get_timed_out: AtomicU64,
+}
+
+impl AtomicStatistics {
+    pub(crate) fn record(&self, kind: StatsKind) {
+        match kind {
+            StatsKind::Direct => self.get_direct.fetch_add(1, Ordering::SeqCst),
+            StatsKind::Waited => self.get_waited.fetch_add(1, Ordering::SeqCst),
+            StatsKind::TimedOut => self.get_timed_out.fetch_add(1, Ordering::SeqCst),
+        };
+    }
+}
+
+impl From<&AtomicStatistics> for Statistics {
+    fn from(item: &AtomicStatistics) -> Self {
+        Self {
+            get_direct: item.get_direct.load(Ordering::SeqCst),
+            get_waited: item.get_waited.load(Ordering::SeqCst),
+            get_timed_out: item.get_timed_out.load(Ordering::SeqCst),
+        }
+    }
+}
+
+pub(crate) enum StatsKind {
+    Direct,
+    Waited,
+    TimedOut,
 }
