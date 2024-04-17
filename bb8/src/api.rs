@@ -85,6 +85,20 @@ pub struct State {
     pub connections: u32,
     /// The number of idle connections.
     pub idle_connections: u32,
+    /// Statistics about the historical usage of the pool.
+    pub statistics: Statistics,
+}
+
+/// Statistics about the historical usage of the `Pool`.
+#[derive(Debug, Default)]
+#[non_exhaustive]
+pub struct Statistics {
+    /// Total gets performed that did not have to wait for a connection.
+    pub get_direct: u64,
+    /// Total gets performed that had to wait for a connection available.
+    pub get_waited: u64,
+    /// Total gets performed that timed out while waiting for a connection.
+    pub get_timed_out: u64,
 }
 
 /// A builder for a connection pool.
