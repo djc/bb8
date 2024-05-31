@@ -5,7 +5,7 @@ use std::time::Instant;
 use crate::{api::QueueStrategy, lock::Mutex};
 use tokio::sync::Notify;
 
-use crate::api::{Builder, ManageConnection};
+use crate::api::{Builder, ManageConnection, State};
 use std::collections::VecDeque;
 
 /// The guts of a `Pool`.
@@ -153,8 +153,11 @@ where
 
         self.dropped((before - self.conns.len()) as u32, config)
     }
+}
 
-    pub(crate) fn state(&self) -> State {
+#[allow(clippy::from_over_into)] // Keep this more private with the internal type
+impl<M: ManageConnection> Into<State> for &PoolInternals<M> {
+    fn into(self) -> State {
         State {
             connections: self.num_conns,
             idle_connections: self.conns.len() as u32,
@@ -244,14 +247,4 @@ impl<C: Send> From<Conn<C>> for IdleConn<C> {
             idle_start: Instant::now(),
         }
     }
-}
-
-/// Information about the state of a `Pool`.
-#[derive(Debug)]
-#[non_exhaustive]
-pub struct State {
-    /// The number of connections currently being managed by the pool.
-    pub connections: u32,
-    /// The number of idle connections.
-    pub idle_connections: u32,
 }
