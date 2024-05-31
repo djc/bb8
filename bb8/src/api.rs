@@ -9,7 +9,6 @@ use async_trait::async_trait;
 
 use crate::inner::PoolInner;
 use crate::internals::Conn;
-pub use crate::internals::State;
 
 /// A generic connection pool.
 pub struct Pool<M>
@@ -45,11 +44,6 @@ impl<M: ManageConnection> Pool<M> {
         Builder::new()
     }
 
-    /// Returns information about the current state of the pool.
-    pub fn state(&self) -> State {
-        self.inner.state()
-    }
-
     /// Retrieves a connection from the pool.
     pub async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
         self.inner.get().await
@@ -76,6 +70,21 @@ impl<M: ManageConnection> Pool<M> {
     pub async fn dedicated_connection(&self) -> Result<M::Connection, M::Error> {
         self.inner.connect().await
     }
+
+    /// Returns information about the current state of the pool.
+    pub fn state(&self) -> State {
+        self.inner.state()
+    }
+}
+
+/// Information about the state of a `Pool`.
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct State {
+    /// The number of connections currently being managed by the pool.
+    pub connections: u32,
+    /// The number of idle connections.
+    pub idle_connections: u32,
 }
 
 /// A builder for a connection pool.

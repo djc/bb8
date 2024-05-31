@@ -9,8 +9,8 @@ use futures_util::TryFutureExt;
 use tokio::spawn;
 use tokio::time::{interval_at, sleep, timeout, Interval};
 
-use crate::api::{Builder, ConnectionState, ManageConnection, PooledConnection, RunError};
-use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, State};
+use crate::api::{Builder, ConnectionState, ManageConnection, PooledConnection, RunError, State};
+use crate::internals::{Approval, ApprovalIter, Conn, SharedPool};
 
 pub(crate) struct PoolInner<M>
 where
@@ -148,7 +148,7 @@ where
 
     /// Returns information about the current state of the pool.
     pub(crate) fn state(&self) -> State {
-        self.inner.internals.lock().state()
+        (&*self.inner.internals.lock()).into()
     }
 
     // Outside of Pool to avoid borrow splitting issues on self
