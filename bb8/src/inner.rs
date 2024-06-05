@@ -1,6 +1,7 @@
 use std::cmp::{max, min};
 use std::fmt;
 use std::future::Future;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -86,6 +87,7 @@ where
 
     pub(crate) async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
         let mut kind = StatsKind::Direct;
+        let mut wait_time_start = None;
 
         let future = async {
             loop {
@@ -98,6 +100,7 @@ where
                 let mut conn = match conn {
                     Some(conn) => PooledConnection::new(self, conn),
                     None => {
+                        wait_time_start = Some(Instant::now());
                         kind = StatsKind::Waited;
                         self.inner.notify.notified().await;
                         continue;
@@ -111,6 +114,10 @@ where
                 match self.inner.manager.is_valid(&mut conn).await {
                     Ok(()) => return Ok(conn),
                     Err(e) => {
+                        self.inner
+                            .statistics
+                            .connections_invalid_closed
+                            .fetch_add(1, Ordering::SeqCst);
                         self.inner.forward_error(e);
                         conn.state = ConnectionState::Invalid;
                         continue;
@@ -127,7 +134,16 @@ where
             }
         };
 
-        self.inner.statistics.record(kind);
+        self.inner.statistics.record_get(kind);
+
+        if let Some(wait_time_start) = wait_time_start {
+            let wait_time = Instant::now() - wait_time_start;
+            self.inner
+                .statistics
+                .get_waited_time_micro
+                .fetch_add(wait_time.as_micros() as u64, Ordering::SeqCst);
+        }
+
         result
     }
 
@@ -147,7 +163,13 @@ where
         let mut locked = self.inner.internals.lock();
         match (state, self.inner.manager.has_broken(&mut conn.conn)) {
             (ConnectionState::Present, false) => locked.put(conn, None, self.inner.clone()),
-            (_, _) => {
+            (_, is_broken) => {
+                if is_broken {
+                    self.inner
+                        .statistics
+                        .connections_broken_closed
+                        .fetch_add(1, Ordering::SeqCst);
+                }
                 let approvals = locked.dropped(1, &self.inner.statics);
                 self.spawn_replenishing_approvals(approvals);
                 self.inner.notify.notify_waiters();
@@ -190,6 +212,10 @@ where
                         .internals
                         .lock()
                         .put(conn, Some(approval), self.inner.clone());
+                    self.inner
+                        .statistics
+                        .connections_created
+                        .fetch_add(1, Ordering::SeqCst);
                     return Ok(());
                 }
                 Err(e) => {

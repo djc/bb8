@@ -246,6 +246,8 @@ async fn test_drop_on_broken() {
     }
 
     assert!(DROPPED.load(Ordering::SeqCst));
+
+    assert_eq!(pool.state().statistics.connections_broken_closed, 1);
 }
 
 #[tokio::test]
@@ -453,6 +455,71 @@ async fn test_now_invalid() {
     // Now try to get a new connection.
     let r = pool.get().await;
     assert!(r.is_err());
+
+    // both connections in the pool were considered invalid
+    assert_eq!(pool.state().statistics.connections_invalid_closed, 2);
+}
+
+#[tokio::test]
+async fn test_idle_timeout() {
+    static DROPPED: AtomicUsize = AtomicUsize::new(0);
+
+    #[derive(Default)]
+    struct Connection;
+    impl Drop for Connection {
+        fn drop(&mut self) {
+            DROPPED.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    let manager = NthConnectionFailManager::<Connection>::new(5);
+    let pool = Pool::builder()
+        .idle_timeout(Some(Duration::from_secs(1)))
+        .connection_timeout(Duration::from_secs(1))
+        .reaper_rate(Duration::from_secs(1))
+        .max_size(5)
+        .min_idle(Some(5))
+        .build(manager)
+        .await
+        .unwrap();
+
+    let (tx1, rx1) = oneshot::channel();
+    let (tx2, rx2) = oneshot::channel();
+    let clone = pool.clone();
+    tokio::spawn(async move {
+        let conn = clone.get().await.unwrap();
+        tx1.send(()).unwrap();
+        // NB: If we sleep here we'll block this thread's event loop, and the
+        // reaper can't run.
+        let _ = rx2
+            .map(|r| match r {
+                Ok(v) => Ok((v, conn)),
+                Err(_) => Err((Error, conn)),
+            })
+            .await;
+    });
+
+    rx1.await.unwrap();
+
+    // And wait.
+    assert!(timeout(Duration::from_secs(2), pending::<()>())
+        .await
+        .is_err());
+    assert_eq!(DROPPED.load(Ordering::SeqCst), 4);
+
+    tx2.send(()).unwrap();
+
+    // And wait some more.
+    assert!(timeout(Duration::from_secs(3), pending::<()>())
+        .await
+        .is_err());
+    assert_eq!(DROPPED.load(Ordering::SeqCst), 5);
+
+    // all 5 idle connections were closed due to max idle time
+    assert_eq!(
+        pool.state().statistics.connections_max_idle_timeout_closed,
+        5
+    );
 }
 
 #[tokio::test]
@@ -509,6 +576,9 @@ async fn test_max_lifetime() {
         .await
         .is_err());
     assert_eq!(DROPPED.load(Ordering::SeqCst), 5);
+
+    // all 5 connections were closed due to max lifetime
+    assert_eq!(pool.state().statistics.connections_max_lifetime_closed, 5);
 }
 
 #[tokio::test]
@@ -924,4 +994,25 @@ async fn test_state_get_contention() {
     let statistics = pool.state().statistics;
     assert_eq!(statistics.get_direct, 1);
     assert_eq!(statistics.get_waited, 1);
+    assert!(statistics.get_waited_time_micro > 0);
+}
+
+#[tokio::test]
+async fn test_statistics_connections_created() {
+    let pool = Pool::builder()
+        .max_size(1)
+        .min_idle(1)
+        .build(OkManager::<FakeConnection>::new())
+        .await
+        .unwrap();
+    let (tx1, rx1) = oneshot::channel();
+    let clone = pool.clone();
+    tokio::spawn(async move {
+        let _ = clone.get().await.unwrap();
+        tx1.send(()).unwrap();
+    });
+    // wait until finished.
+    rx1.await.unwrap();
+
+    assert_eq!(pool.state().statistics.connections_created, 1);
 }
