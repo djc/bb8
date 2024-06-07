@@ -1,7 +1,6 @@
 use std::cmp::{max, min};
 use std::fmt;
 use std::future::Future;
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -86,7 +85,7 @@ where
     }
 
     pub(crate) async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
-        let mut kind = StatsKind::Direct;
+        let mut get_kind = StatsKind::GetDirect;
         let mut wait_time_start = None;
 
         let future = async {
@@ -101,7 +100,7 @@ where
                     Some(conn) => PooledConnection::new(self, conn),
                     None => {
                         wait_time_start = Some(Instant::now());
-                        kind = StatsKind::Waited;
+                        get_kind = StatsKind::GetWaited;
                         self.inner.notify.notified().await;
                         continue;
                     }
@@ -116,8 +115,7 @@ where
                     Err(e) => {
                         self.inner
                             .statistics
-                            .connections_invalid_closed
-                            .fetch_add(1, Ordering::SeqCst);
+                            .record(StatsKind::ConnectionsInvalidClosed, 1);
                         self.inner.forward_error(e);
                         conn.state = ConnectionState::Invalid;
                         continue;
@@ -129,19 +127,18 @@ where
         let result = match timeout(self.inner.statics.connection_timeout, future).await {
             Ok(result) => result,
             _ => {
-                kind = StatsKind::TimedOut;
+                get_kind = StatsKind::GetTimedOut;
                 Err(RunError::TimedOut)
             }
         };
 
-        self.inner.statistics.record_get(kind);
+        self.inner.statistics.record(get_kind, 1);
 
         if let Some(wait_time_start) = wait_time_start {
             let wait_time = Instant::now() - wait_time_start;
             self.inner
                 .statistics
-                .get_waited_time_micro
-                .fetch_add(wait_time.as_micros() as u64, Ordering::SeqCst);
+                .record(StatsKind::GetWaitedTime, wait_time.as_micros() as u64);
         }
 
         result
@@ -167,8 +164,7 @@ where
                 if is_broken {
                     self.inner
                         .statistics
-                        .connections_broken_closed
-                        .fetch_add(1, Ordering::SeqCst);
+                        .record(StatsKind::ConnectionsBrokenClosed, 1);
                 }
                 let approvals = locked.dropped(1, &self.inner.statics);
                 self.spawn_replenishing_approvals(approvals);
@@ -214,8 +210,7 @@ where
                         .put(conn, Some(approval), self.inner.clone());
                     self.inner
                         .statistics
-                        .connections_created
-                        .fetch_add(1, Ordering::SeqCst);
+                        .record(StatsKind::ConnectionsCreated, 1);
                     return Ok(());
                 }
                 Err(e) => {

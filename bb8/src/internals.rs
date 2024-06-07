@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
 
@@ -51,12 +51,14 @@ where
         let mut locked = self.internals.lock();
         let (iter, max_idle_timeout_closed, max_lifetime_closed) = locked.reap(&self.statics);
         drop(locked);
+
         self.statistics
-            .connections_max_idle_timeout_closed
-            .fetch_add(max_idle_timeout_closed, Ordering::SeqCst);
-        self.statistics
-            .connections_max_lifetime_closed
-            .fetch_add(max_lifetime_closed, Ordering::SeqCst);
+            .record(StatsKind::ConnectionsMaxLifeTimeClosed, max_lifetime_closed);
+        self.statistics.record(
+            StatsKind::ConnectionsMaxIdleTimeoutClosed,
+            max_idle_timeout_closed,
+        );
+
         iter
     }
 
@@ -148,8 +150,8 @@ where
     }
 
     pub(crate) fn reap(&mut self, config: &Builder<M>) -> (ApprovalIter, u64, u64) {
-        let mut max_lifetime_closed: u64 = 0;
-        let mut max_idle_timeout_closed: u64 = 0;
+        let mut max_lifetime_closed = 0;
+        let mut max_idle_timeout_closed = 0;
         let now = Instant::now();
         let before = self.conns.len();
 
@@ -275,7 +277,7 @@ pub(crate) struct AtomicStatistics {
     pub(crate) get_direct: AtomicU64,
     pub(crate) get_waited: AtomicU64,
     pub(crate) get_timed_out: AtomicU64,
-    pub(crate) get_waited_time_micro: AtomicU64,
+    pub(crate) get_waited_time_micros: AtomicU64,
     pub(crate) connections_created: AtomicU64,
     pub(crate) connections_broken_closed: AtomicU64,
     pub(crate) connections_invalid_closed: AtomicU64,
@@ -284,11 +286,29 @@ pub(crate) struct AtomicStatistics {
 }
 
 impl AtomicStatistics {
-    pub(crate) fn record_get(&self, kind: StatsKind) {
+    pub(crate) fn record(&self, kind: StatsKind, value: u64) {
         match kind {
-            StatsKind::Direct => self.get_direct.fetch_add(1, Ordering::SeqCst),
-            StatsKind::Waited => self.get_waited.fetch_add(1, Ordering::SeqCst),
-            StatsKind::TimedOut => self.get_timed_out.fetch_add(1, Ordering::SeqCst),
+            StatsKind::GetDirect => self.get_direct.fetch_add(value, Ordering::SeqCst),
+            StatsKind::GetWaited => self.get_waited.fetch_add(value, Ordering::SeqCst),
+            StatsKind::GetTimedOut => self.get_timed_out.fetch_add(value, Ordering::SeqCst),
+            StatsKind::GetWaitedTime => self
+                .get_waited_time_micros
+                .fetch_add(value, Ordering::SeqCst),
+            StatsKind::ConnectionsCreated => {
+                self.connections_created.fetch_add(value, Ordering::SeqCst)
+            }
+            StatsKind::ConnectionsBrokenClosed => self
+                .connections_broken_closed
+                .fetch_add(value, Ordering::SeqCst),
+            StatsKind::ConnectionsInvalidClosed => self
+                .connections_invalid_closed
+                .fetch_add(value, Ordering::SeqCst),
+            StatsKind::ConnectionsMaxLifeTimeClosed => self
+                .connections_max_lifetime_closed
+                .fetch_add(value, Ordering::SeqCst),
+            StatsKind::ConnectionsMaxIdleTimeoutClosed => self
+                .connections_max_idle_timeout_closed
+                .fetch_add(value, Ordering::SeqCst),
         };
     }
 }
@@ -299,7 +319,9 @@ impl From<&AtomicStatistics> for Statistics {
             get_direct: item.get_direct.load(Ordering::SeqCst),
             get_waited: item.get_waited.load(Ordering::SeqCst),
             get_timed_out: item.get_timed_out.load(Ordering::SeqCst),
-            get_waited_time_micro: item.get_waited_time_micro.load(Ordering::SeqCst),
+            get_waited_time: Duration::from_micros(
+                item.get_waited_time_micros.load(Ordering::SeqCst),
+            ),
             connections_created: item.connections_created.load(Ordering::SeqCst),
             connections_broken_closed: item.connections_broken_closed.load(Ordering::SeqCst),
             connections_invalid_closed: item.connections_invalid_closed.load(Ordering::SeqCst),
@@ -314,7 +336,13 @@ impl From<&AtomicStatistics> for Statistics {
 }
 
 pub(crate) enum StatsKind {
-    Direct,
-    Waited,
-    TimedOut,
+    GetDirect,
+    GetWaited,
+    GetTimedOut,
+    GetWaitedTime,
+    ConnectionsCreated,
+    ConnectionsBrokenClosed,
+    ConnectionsInvalidClosed,
+    ConnectionsMaxLifeTimeClosed,
+    ConnectionsMaxIdleTimeoutClosed,
 }
