@@ -86,6 +86,7 @@ where
 
     pub(crate) async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
         let mut kind = StatsKind::Direct;
+        let mut wait_time_start = None;
 
         let future = async {
             loop {
@@ -98,6 +99,7 @@ where
                 let mut conn = match conn {
                     Some(conn) => PooledConnection::new(self, conn),
                     None => {
+                        wait_time_start = Some(Instant::now());
                         kind = StatsKind::Waited;
                         self.inner.notify.notified().await;
                         continue;
@@ -127,7 +129,7 @@ where
             }
         };
 
-        self.inner.statistics.record(kind);
+        self.inner.statistics.record_get(kind, wait_time_start);
         result
     }
 
