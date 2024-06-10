@@ -49,7 +49,11 @@ where
 
     pub(crate) fn reap(&self) -> ApprovalIter {
         let mut locked = self.internals.lock();
-        locked.reap(&self.statics)
+        let (iter, closed_idle_timeout, closed_max_lifetime) = locked.reap(&self.statics);
+        drop(locked);
+        self.statistics
+            .record_connections_reaped(closed_idle_timeout, closed_max_lifetime);
+        iter
     }
 
     pub(crate) fn forward_error(&self, err: M::Error) {
@@ -139,22 +143,34 @@ where
         ApprovalIter { num: num as usize }
     }
 
-    pub(crate) fn reap(&mut self, config: &Builder<M>) -> ApprovalIter {
+    pub(crate) fn reap(&mut self, config: &Builder<M>) -> (ApprovalIter, u64, u64) {
+        let mut closed_max_lifetime = 0;
+        let mut closed_idle_timeout = 0;
         let now = Instant::now();
         let before = self.conns.len();
 
         self.conns.retain(|conn| {
             let mut keep = true;
             if let Some(timeout) = config.idle_timeout {
-                keep &= now - conn.idle_start < timeout;
+                if now - conn.idle_start >= timeout {
+                    closed_idle_timeout += 1;
+                    keep &= false;
+                }
             }
             if let Some(lifetime) = config.max_lifetime {
-                keep &= now - conn.conn.birth < lifetime;
+                if now - conn.conn.birth >= lifetime {
+                    closed_max_lifetime += 1;
+                    keep &= false;
+                }
             }
             keep
         });
 
-        self.dropped((before - self.conns.len()) as u32, config)
+        (
+            self.dropped((before - self.conns.len()) as u32, config),
+            closed_idle_timeout,
+            closed_max_lifetime,
+        )
     }
 
     pub(crate) fn state(&self, statistics: Statistics) -> State {
@@ -256,14 +272,18 @@ pub(crate) struct AtomicStatistics {
     pub(crate) get_waited: AtomicU64,
     pub(crate) get_timed_out: AtomicU64,
     pub(crate) get_wait_time_micros: AtomicU64,
+    pub(crate) connections_closed_broken: AtomicU64,
+    pub(crate) connections_closed_invalid: AtomicU64,
+    pub(crate) connections_closed_max_lifetime: AtomicU64,
+    pub(crate) connections_closed_idle_timeout: AtomicU64,
 }
 
 impl AtomicStatistics {
-    pub(crate) fn record_get(&self, kind: StatsKind, wait_time_start: Option<Instant>) {
+    pub(crate) fn record_get(&self, kind: StatsGetKind, wait_time_start: Option<Instant>) {
         match kind {
-            StatsKind::Direct => self.get_direct.fetch_add(1, Ordering::SeqCst),
-            StatsKind::Waited => self.get_waited.fetch_add(1, Ordering::SeqCst),
-            StatsKind::TimedOut => self.get_timed_out.fetch_add(1, Ordering::SeqCst),
+            StatsGetKind::Direct => self.get_direct.fetch_add(1, Ordering::SeqCst),
+            StatsGetKind::Waited => self.get_waited.fetch_add(1, Ordering::SeqCst),
+            StatsGetKind::TimedOut => self.get_timed_out.fetch_add(1, Ordering::SeqCst),
         };
 
         if let Some(wait_time_start) = wait_time_start {
@@ -271,6 +291,28 @@ impl AtomicStatistics {
             self.get_wait_time_micros
                 .fetch_add(wait_time.as_micros() as u64, Ordering::SeqCst);
         }
+    }
+
+    pub(crate) fn record_connection_closed(&self, kind: StatsConnectionClosedKind) {
+        match kind {
+            StatsConnectionClosedKind::Broken => self
+                .connections_closed_broken
+                .fetch_add(1, Ordering::SeqCst),
+            StatsConnectionClosedKind::Invalid => self
+                .connections_closed_invalid
+                .fetch_add(1, Ordering::SeqCst),
+        };
+    }
+
+    pub(crate) fn record_connections_reaped(
+        &self,
+        closed_idle_timeout: u64,
+        closed_max_lifetime: u64,
+    ) {
+        self.connections_closed_idle_timeout
+            .fetch_add(closed_idle_timeout, Ordering::SeqCst);
+        self.connections_closed_max_lifetime
+            .fetch_add(closed_max_lifetime, Ordering::SeqCst);
     }
 }
 
@@ -281,12 +323,25 @@ impl From<&AtomicStatistics> for Statistics {
             get_waited: item.get_waited.load(Ordering::SeqCst),
             get_timed_out: item.get_timed_out.load(Ordering::SeqCst),
             get_wait_time: Duration::from_micros(item.get_wait_time_micros.load(Ordering::SeqCst)),
+            connections_closed_broken: item.connections_closed_broken.load(Ordering::SeqCst),
+            connections_closed_invalid: item.connections_closed_invalid.load(Ordering::SeqCst),
+            connections_closed_max_lifetime: item
+                .connections_closed_max_lifetime
+                .load(Ordering::SeqCst),
+            connections_closed_idle_timeout: item
+                .connections_closed_idle_timeout
+                .load(Ordering::SeqCst),
         }
     }
 }
 
-pub(crate) enum StatsKind {
+pub(crate) enum StatsGetKind {
     Direct,
     Waited,
     TimedOut,
+}
+
+pub(crate) enum StatsConnectionClosedKind {
+    Broken,
+    Invalid,
 }

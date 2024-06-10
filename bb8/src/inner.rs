@@ -10,7 +10,9 @@ use tokio::spawn;
 use tokio::time::{interval_at, sleep, timeout, Interval};
 
 use crate::api::{Builder, ConnectionState, ManageConnection, PooledConnection, RunError, State};
-use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, StatsKind};
+use crate::internals::{
+    Approval, ApprovalIter, Conn, SharedPool, StatsConnectionClosedKind, StatsGetKind,
+};
 
 pub(crate) struct PoolInner<M>
 where
@@ -85,7 +87,7 @@ where
     }
 
     pub(crate) async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
-        let mut kind = StatsKind::Direct;
+        let mut kind = StatsGetKind::Direct;
         let mut wait_time_start = None;
 
         let future = async {
@@ -100,7 +102,7 @@ where
                     Some(conn) => PooledConnection::new(self, conn),
                     None => {
                         wait_time_start = Some(Instant::now());
-                        kind = StatsKind::Waited;
+                        kind = StatsGetKind::Waited;
                         self.inner.notify.notified().await;
                         continue;
                     }
@@ -114,6 +116,9 @@ where
                     Ok(()) => return Ok(conn),
                     Err(e) => {
                         self.inner.forward_error(e);
+                        self.inner
+                            .statistics
+                            .record_connection_closed(StatsConnectionClosedKind::Invalid);
                         conn.state = ConnectionState::Invalid;
                         continue;
                     }
@@ -124,7 +129,7 @@ where
         let result = match timeout(self.inner.statics.connection_timeout, future).await {
             Ok(result) => result,
             _ => {
-                kind = StatsKind::TimedOut;
+                kind = StatsGetKind::TimedOut;
                 Err(RunError::TimedOut)
             }
         };
@@ -149,7 +154,12 @@ where
         let mut locked = self.inner.internals.lock();
         match (state, self.inner.manager.has_broken(&mut conn.conn)) {
             (ConnectionState::Present, false) => locked.put(conn, None, self.inner.clone()),
-            (_, _) => {
+            (_, is_broken) => {
+                if is_broken {
+                    self.inner
+                        .statistics
+                        .record_connection_closed(StatsConnectionClosedKind::Broken);
+                }
                 let approvals = locked.dropped(1, &self.inner.statics);
                 self.spawn_replenishing_approvals(approvals);
                 self.inner.notify.notify_waiters();
