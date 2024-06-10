@@ -129,11 +129,7 @@ where
             }
         };
 
-        self.inner.statistics.record(kind);
-        if let Some(wait_time_start) = wait_time_start {
-            let wait_time = Instant::now() - wait_time_start;
-            self.inner.statistics.record_get(wait_time);
-        }
+        self.inner.statistics.record_get(kind, wait_time_start);
         result
     }
 
