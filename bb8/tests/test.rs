@@ -924,4 +924,5 @@ async fn test_state_get_contention() {
     let statistics = pool.state().statistics;
     assert_eq!(statistics.get_direct, 1);
     assert_eq!(statistics.get_waited, 1);
+    assert!(statistics.get_waited_time > Duration::from_micros(0));
 }

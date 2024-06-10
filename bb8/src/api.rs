@@ -99,6 +99,8 @@ pub struct Statistics {
     pub get_waited: u64,
     /// Total gets performed that timed out while waiting for a connection.
     pub get_timed_out: u64,
+    /// Total time accumulated waiting for a connection.
+    pub get_waited_time: Duration,
 }
 
 /// A builder for a connection pool.

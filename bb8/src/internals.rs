@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
 
@@ -255,6 +255,7 @@ pub(crate) struct AtomicStatistics {
     pub(crate) get_direct: AtomicU64,
     pub(crate) get_waited: AtomicU64,
     pub(crate) get_timed_out: AtomicU64,
+    pub(crate) get_waited_time_micros: AtomicU64,
 }
 
 impl AtomicStatistics {
@@ -265,6 +266,11 @@ impl AtomicStatistics {
             StatsKind::TimedOut => self.get_timed_out.fetch_add(1, Ordering::SeqCst),
         };
     }
+
+    pub(crate) fn record_get(&self, wait_time: Duration) {
+        self.get_waited_time_micros
+            .fetch_add(wait_time.as_micros() as u64, Ordering::SeqCst);
+    }
 }
 
 impl From<&AtomicStatistics> for Statistics {
@@ -273,6 +279,9 @@ impl From<&AtomicStatistics> for Statistics {
             get_direct: item.get_direct.load(Ordering::SeqCst),
             get_waited: item.get_waited.load(Ordering::SeqCst),
             get_timed_out: item.get_timed_out.load(Ordering::SeqCst),
+            get_waited_time: Duration::from_micros(
+                item.get_waited_time_micros.load(Ordering::SeqCst),
+            ),
         }
     }
 }
