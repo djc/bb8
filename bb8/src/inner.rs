@@ -10,7 +10,7 @@ use tokio::spawn;
 use tokio::time::{interval_at, sleep, timeout, Interval};
 
 use crate::api::{Builder, ConnectionState, ManageConnection, PooledConnection, RunError, State};
-use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, StatsGetKind};
+use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, StatsGetKind, StatsKind};
 
 pub(crate) struct PoolInner<M>
 where
@@ -113,6 +113,7 @@ where
                 match self.inner.manager.is_valid(&mut conn).await {
                     Ok(()) => return Ok(conn),
                     Err(e) => {
+                        self.inner.statistics.record(StatsKind::ClosedInvalid);
                         self.inner.forward_error(e);
                         conn.state = ConnectionState::Invalid;
                         continue;
@@ -149,7 +150,10 @@ where
         let mut locked = self.inner.internals.lock();
         match (state, self.inner.manager.has_broken(&mut conn.conn)) {
             (ConnectionState::Present, false) => locked.put(conn, None, self.inner.clone()),
-            (_, _) => {
+            (_, is_broken) => {
+                if is_broken {
+                    self.inner.statistics.record(StatsKind::ClosedBroken);
+                }
                 let approvals = locked.dropped(1, &self.inner.statics);
                 self.spawn_replenishing_approvals(approvals);
                 self.inner.notify.notify_waiters();

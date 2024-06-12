@@ -256,6 +256,8 @@ pub(crate) struct AtomicStatistics {
     pub(crate) get_waited: AtomicU64,
     pub(crate) get_timed_out: AtomicU64,
     pub(crate) get_wait_time_micros: AtomicU64,
+    pub(crate) connections_closed_broken: AtomicU64,
+    pub(crate) connections_closed_invalid: AtomicU64,
 }
 
 impl AtomicStatistics {
@@ -272,6 +274,14 @@ impl AtomicStatistics {
                 .fetch_add(wait_time.as_micros() as u64, Ordering::SeqCst);
         }
     }
+
+    pub(crate) fn record(&self, kind: StatsKind) {
+        match kind {
+            StatsKind::ClosedBroken => &self.connections_closed_broken,
+            StatsKind::ClosedInvalid => &self.connections_closed_invalid,
+        }
+        .fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 impl From<&AtomicStatistics> for Statistics {
@@ -281,6 +291,8 @@ impl From<&AtomicStatistics> for Statistics {
             get_waited: item.get_waited.load(Ordering::SeqCst),
             get_timed_out: item.get_timed_out.load(Ordering::SeqCst),
             get_wait_time: Duration::from_micros(item.get_wait_time_micros.load(Ordering::SeqCst)),
+            connections_closed_broken: item.connections_closed_broken.load(Ordering::SeqCst),
+            connections_closed_invalid: item.connections_closed_invalid.load(Ordering::SeqCst),
         }
     }
 }
@@ -289,4 +301,9 @@ pub(crate) enum StatsGetKind {
     Direct,
     Waited,
     TimedOut,
+}
+
+pub(crate) enum StatsKind {
+    ClosedBroken,
+    ClosedInvalid,
 }
