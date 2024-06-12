@@ -10,7 +10,7 @@ use tokio::spawn;
 use tokio::time::{interval_at, sleep, timeout, Interval};
 
 use crate::api::{Builder, ConnectionState, ManageConnection, PooledConnection, RunError, State};
-use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, StatsKind};
+use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, StatsGetKind};
 
 pub(crate) struct PoolInner<M>
 where
@@ -85,7 +85,7 @@ where
     }
 
     pub(crate) async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
-        let mut kind = StatsKind::Direct;
+        let mut kind = StatsGetKind::Direct;
         let mut wait_time_start = None;
 
         let future = async {
@@ -100,7 +100,7 @@ where
                     Some(conn) => PooledConnection::new(self, conn),
                     None => {
                         wait_time_start = Some(Instant::now());
-                        kind = StatsKind::Waited;
+                        kind = StatsGetKind::Waited;
                         self.inner.notify.notified().await;
                         continue;
                     }
@@ -124,7 +124,7 @@ where
         let result = match timeout(self.inner.statics.connection_timeout, future).await {
             Ok(result) => result,
             _ => {
-                kind = StatsKind::TimedOut;
+                kind = StatsGetKind::TimedOut;
                 Err(RunError::TimedOut)
             }
         };
