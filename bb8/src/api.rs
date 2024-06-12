@@ -101,6 +101,10 @@ pub struct Statistics {
     pub get_timed_out: u64,
     /// Total time accumulated waiting for a connection.
     pub get_wait_time: Duration,
+    /// Total connections that were closed due to be in broken state.
+    pub connections_closed_broken: u64,
+    /// Total connections that were closed due to be considered invalid.
+    pub connections_closed_invalid: u64,
 }
 
 /// A builder for a connection pool.
