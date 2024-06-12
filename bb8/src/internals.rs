@@ -259,11 +259,11 @@ pub(crate) struct AtomicStatistics {
 }
 
 impl AtomicStatistics {
-    pub(crate) fn record_get(&self, kind: StatsKind, wait_time_start: Option<Instant>) {
+    pub(crate) fn record_get(&self, kind: StatsGetKind, wait_time_start: Option<Instant>) {
         match kind {
-            StatsKind::Direct => self.get_direct.fetch_add(1, Ordering::SeqCst),
-            StatsKind::Waited => self.get_waited.fetch_add(1, Ordering::SeqCst),
-            StatsKind::TimedOut => self.get_timed_out.fetch_add(1, Ordering::SeqCst),
+            StatsGetKind::Direct => self.get_direct.fetch_add(1, Ordering::SeqCst),
+            StatsGetKind::Waited => self.get_waited.fetch_add(1, Ordering::SeqCst),
+            StatsGetKind::TimedOut => self.get_timed_out.fetch_add(1, Ordering::SeqCst),
         };
 
         if let Some(wait_time_start) = wait_time_start {
@@ -285,7 +285,7 @@ impl From<&AtomicStatistics> for Statistics {
     }
 }
 
-pub(crate) enum StatsKind {
+pub(crate) enum StatsGetKind {
     Direct,
     Waited,
     TimedOut,
