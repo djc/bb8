@@ -105,6 +105,12 @@ pub struct Statistics {
     pub connections_closed_broken: u64,
     /// Total connections that were closed due to be considered invalid.
     pub connections_closed_invalid: u64,
+    /// Total connections that were closed because they reached the max
+    /// lifetime.
+    pub connections_closed_max_lifetime: u64,
+    /// Total connections that were closed because they reached the max
+    /// idle timeout.
+    pub connections_closed_idle_timeout: u64,
 }
 
 /// A builder for a connection pool.
