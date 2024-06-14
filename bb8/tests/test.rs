@@ -992,3 +992,23 @@ async fn test_state_get_contention() {
     assert_eq!(statistics.get_waited, 1);
     assert!(statistics.get_wait_time > Duration::from_micros(0));
 }
+
+#[tokio::test]
+async fn test_statistics_connections_created() {
+    let pool = Pool::builder()
+        .max_size(1)
+        .min_idle(1)
+        .build(OkManager::<FakeConnection>::new())
+        .await
+        .unwrap();
+    let (tx1, rx1) = oneshot::channel();
+    let clone = pool.clone();
+    tokio::spawn(async move {
+        let _ = clone.get().await.unwrap();
+        tx1.send(()).unwrap();
+    });
+    // wait until finished.
+    rx1.await.unwrap();
+
+    assert_eq!(pool.state().statistics.connections_created, 1);
+}
