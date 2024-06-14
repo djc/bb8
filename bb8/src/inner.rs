@@ -196,6 +196,7 @@ where
                         .internals
                         .lock()
                         .put(conn, Some(approval), self.inner.clone());
+                    self.inner.statistics.record(StatsKind::Created);
                     return Ok(());
                 }
                 Err(e) => {
