@@ -282,15 +282,15 @@ pub(crate) struct AtomicStatistics {
 impl AtomicStatistics {
     pub(crate) fn record_get(&self, kind: StatsGetKind, wait_time_start: Option<Instant>) {
         match kind {
-            StatsGetKind::Direct => self.get_direct.fetch_add(1, Ordering::SeqCst),
-            StatsGetKind::Waited => self.get_waited.fetch_add(1, Ordering::SeqCst),
-            StatsGetKind::TimedOut => self.get_timed_out.fetch_add(1, Ordering::SeqCst),
+            StatsGetKind::Direct => self.get_direct.fetch_add(1, Ordering::Relaxed),
+            StatsGetKind::Waited => self.get_waited.fetch_add(1, Ordering::Relaxed),
+            StatsGetKind::TimedOut => self.get_timed_out.fetch_add(1, Ordering::Relaxed),
         };
 
         if let Some(wait_time_start) = wait_time_start {
             let wait_time = Instant::now() - wait_time_start;
             self.get_wait_time_micros
-                .fetch_add(wait_time.as_micros() as u64, Ordering::SeqCst);
+                .fetch_add(wait_time.as_micros() as u64, Ordering::Relaxed);
         }
     }
 
@@ -300,7 +300,7 @@ impl AtomicStatistics {
             StatsKind::ClosedBroken => &self.connections_closed_broken,
             StatsKind::ClosedInvalid => &self.connections_closed_invalid,
         }
-        .fetch_add(1, Ordering::SeqCst);
+        .fetch_add(1, Ordering::Relaxed);
     }
 
     pub(crate) fn record_connections_reaped(
@@ -309,28 +309,28 @@ impl AtomicStatistics {
         closed_max_lifetime: u64,
     ) {
         self.connections_closed_idle_timeout
-            .fetch_add(closed_idle_timeout, Ordering::SeqCst);
+            .fetch_add(closed_idle_timeout, Ordering::Relaxed);
         self.connections_closed_max_lifetime
-            .fetch_add(closed_max_lifetime, Ordering::SeqCst);
+            .fetch_add(closed_max_lifetime, Ordering::Relaxed);
     }
 }
 
 impl From<&AtomicStatistics> for Statistics {
     fn from(item: &AtomicStatistics) -> Self {
         Self {
-            get_direct: item.get_direct.load(Ordering::SeqCst),
-            get_waited: item.get_waited.load(Ordering::SeqCst),
-            get_timed_out: item.get_timed_out.load(Ordering::SeqCst),
-            get_wait_time: Duration::from_micros(item.get_wait_time_micros.load(Ordering::SeqCst)),
-            connections_created: item.connections_created.load(Ordering::SeqCst),
-            connections_closed_broken: item.connections_closed_broken.load(Ordering::SeqCst),
-            connections_closed_invalid: item.connections_closed_invalid.load(Ordering::SeqCst),
+            get_direct: item.get_direct.load(Ordering::Relaxed),
+            get_waited: item.get_waited.load(Ordering::Relaxed),
+            get_timed_out: item.get_timed_out.load(Ordering::Relaxed),
+            get_wait_time: Duration::from_micros(item.get_wait_time_micros.load(Ordering::Relaxed)),
+            connections_created: item.connections_created.load(Ordering::Relaxed),
+            connections_closed_broken: item.connections_closed_broken.load(Ordering::Relaxed),
+            connections_closed_invalid: item.connections_closed_invalid.load(Ordering::Relaxed),
             connections_closed_max_lifetime: item
                 .connections_closed_max_lifetime
-                .load(Ordering::SeqCst),
+                .load(Ordering::Relaxed),
             connections_closed_idle_timeout: item
                 .connections_closed_idle_timeout
-                .load(Ordering::SeqCst),
+                .load(Ordering::Relaxed),
         }
     }
 }
