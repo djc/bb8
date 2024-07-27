@@ -75,6 +75,14 @@ impl<M: ManageConnection> Pool<M> {
     pub fn state(&self) -> State {
         self.inner.state()
     }
+
+    /// Adds a connection to the pool.
+    ///
+    /// If the connection is broken, or the pool is at capacity, the
+    /// connection is not added and instead returned to the caller in Err.
+    pub fn add(&self, conn: M::Connection) -> Result<(), AddError<M::Connection>> {
+        self.inner.try_put(conn)
+    }
 }
 
 /// Information about the state of a `Pool`.
@@ -523,6 +531,33 @@ where
 {
     fn from(error: E) -> Self {
         Self::User(error)
+    }
+}
+
+/// Error type returned by `Pool::add(conn)`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AddError<C> {
+    /// The connection was broken before it could be added.
+    Broken(C),
+    /// Unable to add the connection to the pool due to insufficient capacity.
+    NoCapacity(C),
+}
+
+impl<E: error::Error + 'static> fmt::Display for AddError<E> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            AddError::Broken(_) => write!(f, "The connection was broken before it could be added"),
+            AddError::NoCapacity(_) => write!(
+                f,
+                "Unable to add the connection to the pool due to insufficient capacity"
+            ),
+        }
+    }
+}
+
+impl<E: error::Error + 'static> error::Error for AddError<E> {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        None
     }
 }
 

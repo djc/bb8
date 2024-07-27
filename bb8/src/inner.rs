@@ -9,7 +9,9 @@ use futures_util::TryFutureExt;
 use tokio::spawn;
 use tokio::time::{interval_at, sleep, timeout, Interval};
 
-use crate::api::{Builder, ConnectionState, ManageConnection, PooledConnection, RunError, State};
+use crate::api::{
+    AddError, Builder, ConnectionState, ManageConnection, PooledConnection, RunError, State,
+};
 use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, StatsGetKind, StatsKind};
 
 pub(crate) struct PoolInner<M>
@@ -158,6 +160,15 @@ where
                 self.spawn_replenishing_approvals(approvals);
                 self.inner.notify.notify_waiters();
             }
+        }
+    }
+
+    /// Adds an external connection to the pool if there is capacity for it.
+    pub(crate) fn try_put(&self, mut conn: M::Connection) -> Result<(), AddError<M::Connection>> {
+        if self.inner.manager.has_broken(&mut conn) {
+            Err(AddError::Broken(conn))
+        } else {
+            self.inner.try_put(conn).map_err(AddError::NoCapacity)
         }
     }
 
