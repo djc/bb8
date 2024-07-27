@@ -1014,6 +1014,21 @@ async fn test_statistics_connections_created() {
 }
 
 #[tokio::test]
+async fn test_can_use_added_connections() {
+    let pool = Pool::builder()
+        .connection_timeout(Duration::from_millis(1))
+        .build_unchecked(NthConnectionFailManager::<FakeConnection>::new(0));
+
+    // Assert pool can't replenish connections on its own
+    let res = pool.get().await;
+    assert_eq!(res.unwrap_err(), RunError::TimedOut);
+
+    pool.add(FakeConnection).unwrap();
+    let res = pool.get().await;
+    assert!(res.is_ok());
+}
+
+#[tokio::test]
 async fn test_add_ok_until_max_size() {
     let pool = Pool::builder()
         .min_idle(1)
