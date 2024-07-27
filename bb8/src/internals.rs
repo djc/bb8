@@ -47,6 +47,17 @@ where
         (conn, approvals)
     }
 
+    pub(crate) fn try_put(self: &Arc<Self>, conn: M::Connection) -> Result<(), M::Connection> {
+        let mut locked = self.internals.lock();
+        let mut approvals = locked.approvals(&self.statics, 1);
+        let Some(approval) = approvals.next() else {
+            return Err(conn);
+        };
+        let conn = Conn::new(conn);
+        locked.put(conn, Some(approval), self.clone());
+        Ok(())
+    }
+
     pub(crate) fn reap(&self) -> ApprovalIter {
         let mut locked = self.internals.lock();
         let (iter, closed_idle_timeout, closed_max_lifetime) = locked.reap(&self.statics);
