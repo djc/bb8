@@ -136,7 +136,7 @@ where
         self.approvals(config, wanted)
     }
 
-    fn approvals(&mut self, config: &Builder<M>, num: u32) -> ApprovalIter {
+    pub(crate) fn approvals(&mut self, config: &Builder<M>, num: u32) -> ApprovalIter {
         let current = self.num_conns + self.pending_conns;
         let num = min(num, config.max_size.saturating_sub(current));
         self.pending_conns += num;
