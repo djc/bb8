@@ -1025,3 +1025,51 @@ async fn test_statistics_connections_created() {
 
     assert_eq!(pool.state().statistics.connections_created, 1);
 }
+
+#[tokio::test]
+async fn test_can_use_added_connections() {
+    let pool = Pool::builder()
+        .connection_timeout(Duration::from_millis(1))
+        .build_unchecked(NthConnectionFailManager::<FakeConnection>::new(0));
+
+    // Assert pool can't replenish connections on its own
+    let res = pool.get().await;
+    assert_eq!(res.unwrap_err(), RunError::TimedOut);
+
+    pool.add(FakeConnection).unwrap();
+    let res = pool.get().await;
+    assert!(res.is_ok());
+}
+
+#[tokio::test]
+async fn test_add_ok_until_max_size() {
+    let pool = Pool::builder()
+        .min_idle(1)
+        .max_size(3)
+        .build(OkManager::<FakeConnection>::new())
+        .await
+        .unwrap();
+
+    for _ in 0..2 {
+        let conn = pool.dedicated_connection().await.unwrap();
+        pool.add(conn).unwrap();
+    }
+
+    let conn = pool.dedicated_connection().await.unwrap();
+    let res = pool.add(conn);
+    assert!(matches!(res, Err(AddError::NoCapacity(_))));
+}
+
+#[tokio::test]
+async fn test_add_checks_broken_connections() {
+    let pool = Pool::builder()
+        .min_idle(1)
+        .max_size(3)
+        .build(BrokenConnectionManager::<FakeConnection>::new())
+        .await
+        .unwrap();
+
+    let conn = pool.dedicated_connection().await.unwrap();
+    let res = pool.add(conn);
+    assert!(matches!(res, Err(AddError::Broken(_))));
+}
