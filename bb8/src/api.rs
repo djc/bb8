@@ -75,6 +75,14 @@ impl<M: ManageConnection> Pool<M> {
     pub fn state(&self) -> State {
         self.inner.state()
     }
+
+    /// Adds a connection to the pool.
+    ///
+    /// If the pool is at capacity, the connection is not added and instead
+    /// returned to the caller in Err.
+    pub fn add(&self, conn: M::Connection) -> Result<(), M::Connection> {
+        self.inner.try_put(conn)
+    }
 }
 
 /// Information about the state of a `Pool`.

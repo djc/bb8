@@ -161,6 +161,20 @@ where
         }
     }
 
+    /// Adds an external connection to the pool if there is capacity for it.
+    pub(crate) fn try_put(&self, conn: M::Connection) -> Result<(), M::Connection> {
+        let mut locked = self.inner.internals.lock();
+        let mut approvals = locked.approvals(&self.inner.statics, 1);
+        match approvals.next() {
+            Some(approval) => {
+                let conn = Conn::new(conn);
+                locked.put(conn, Some(approval), self.inner.clone());
+                Ok(())
+            }
+            None => Err(conn),
+        }
+    }
+
     /// Returns information about the current state of the pool.
     pub(crate) fn state(&self) -> State {
         self.inner
