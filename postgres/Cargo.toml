@@ -26,4 +26,5 @@ tokio-postgres = "0.7"
 
 [dev-dependencies]
 futures-util = "0.3.2"
+testcontainers-modules = { version = "0.9", features = ["postgres"] }
 tokio = { version = "1.0.0", features = ["macros", "rt-multi-thread"] }

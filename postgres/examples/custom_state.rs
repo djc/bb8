@@ -5,6 +5,8 @@ use std::str::FromStr;
 use async_trait::async_trait;
 use bb8::{CustomizeConnection, Pool};
 use bb8_postgres::PostgresConnectionManager;
+use testcontainers_modules::testcontainers::runners::AsyncRunner;
+use testcontainers_modules::testcontainers::ImageExt;
 use tokio_postgres::config::Config;
 use tokio_postgres::tls::{MakeTlsConnect, TlsConnect};
 use tokio_postgres::{Client, Error, Socket, Statement};
@@ -15,7 +17,18 @@ use tokio_postgres::{Client, Error, Socket, Statement};
 // docker run --name gotham-middleware-postgres -e POSTGRES_PASSWORD=mysecretpassword -p 5432:5432 -d postgres
 #[tokio::main]
 async fn main() {
-    let config = Config::from_str("postgresql://postgres:docker@localhost:5432").unwrap();
+    println!("Starting postgres container...");
+    let postgres_container = testcontainers_modules::postgres::Postgres::default()
+        .with_tag("15")
+        .start()
+        .await
+        .unwrap();
+
+    let db_host = postgres_container.get_host().await.unwrap();
+    let db_port = postgres_container.get_host_port_ipv4(5432).await.unwrap();
+
+    let connection_string = format!("postgres://postgres:postgres@{db_host}:{db_port}");
+    let config = Config::from_str(&connection_string).unwrap();
     let pg_mgr = CustomPostgresConnectionManager::new(config, tokio_postgres::NoTls);
 
     let pool = Pool::builder()
@@ -38,6 +51,11 @@ async fn main() {
         .expect("query failed");
 
     println!("result: {}", row.get::<usize, i32>(0));
+
+    println!("Stop and remove DB container");
+
+    postgres_container.stop().await.unwrap();
+    postgres_container.rm().await.unwrap();
 }
 
 #[derive(Debug)]
