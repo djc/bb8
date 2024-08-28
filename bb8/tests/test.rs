@@ -207,6 +207,35 @@ fn test_is_send_sync() {
     is_send_sync::<Pool<OkManager<FakeConnection>>>();
 }
 
+// A connection manager that always returns `true` for `has_broken()`
+struct BrokenConnectionManager<C> {
+    _c: PhantomData<C>,
+}
+
+impl<C> BrokenConnectionManager<C> {
+    fn new() -> Self {
+        BrokenConnectionManager { _c: PhantomData }
+    }
+}
+
+#[async_trait]
+impl<C: Default + Send + Sync + 'static> ManageConnection for BrokenConnectionManager<C> {
+    type Connection = C;
+    type Error = Error;
+
+    async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+        Ok(C::default())
+    }
+
+    async fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn has_broken(&self, _: &mut Self::Connection) -> bool {
+        true
+    }
+}
+
 #[tokio::test]
 async fn test_drop_on_broken() {
     static DROPPED: AtomicBool = AtomicBool::new(false);
@@ -220,27 +249,11 @@ async fn test_drop_on_broken() {
         }
     }
 
-    struct Handler;
+    let pool = Pool::builder()
+        .build(BrokenConnectionManager::<Connection>::new())
+        .await
+        .unwrap();
 
-    #[async_trait]
-    impl ManageConnection for Handler {
-        type Connection = Connection;
-        type Error = Error;
-
-        async fn connect(&self) -> Result<Self::Connection, Self::Error> {
-            Ok(Default::default())
-        }
-
-        async fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
-            Ok(())
-        }
-
-        fn has_broken(&self, _: &mut Self::Connection) -> bool {
-            true
-        }
-    }
-
-    let pool = Pool::builder().build(Handler).await.unwrap();
     {
         let _ = pool.get().await.unwrap();
     }
