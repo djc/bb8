@@ -208,14 +208,9 @@ fn test_is_send_sync() {
 }
 
 // A connection manager that always returns `true` for `has_broken()`
+#[derive(Default)]
 struct BrokenConnectionManager<C> {
     _c: PhantomData<C>,
-}
-
-impl<C> BrokenConnectionManager<C> {
-    fn new() -> Self {
-        BrokenConnectionManager { _c: PhantomData }
-    }
 }
 
 #[async_trait]
@@ -250,7 +245,7 @@ async fn test_drop_on_broken() {
     }
 
     let pool = Pool::builder()
-        .build(BrokenConnectionManager::<Connection>::new())
+        .build(BrokenConnectionManager::<Connection>::default())
         .await
         .unwrap();
 
