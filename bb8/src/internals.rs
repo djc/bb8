@@ -113,7 +113,7 @@ where
             QueueStrategy::Lifo => self.conns.push_front(conn),
         }
 
-        pool.notify.notify_one();
+        pool.notify.notify_waiters();
     }
 
     pub(crate) fn connect_failed(&mut self, _: Approval) {

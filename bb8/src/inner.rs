@@ -158,7 +158,6 @@ where
                 }
                 let approvals = locked.dropped(1, &self.inner.statics);
                 self.spawn_replenishing_approvals(approvals);
-                self.inner.notify.notify_waiters();
             }
         }
     }
