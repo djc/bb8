@@ -91,6 +91,7 @@ where
         let mut wait_time_start = None;
 
         let future = async {
+            let _guard = self.inner.request();
             loop {
                 let (conn, approvals) = self.inner.pop();
                 self.spawn_replenishing_approvals(approvals);

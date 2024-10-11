@@ -22,6 +22,27 @@ where
     pub(crate) statistics: AtomicStatistics,
 }
 
+pub(crate) struct GetGuard<M: ManageConnection + Send> {
+    inner: Arc<SharedPool<M>>,
+}
+
+impl<M: ManageConnection + Send> GetGuard<M> {
+    fn new(inner: Arc<SharedPool<M>>) -> Self {
+        {
+            let mut locked = inner.internals.lock();
+            locked.in_flight += 1;
+        }
+        GetGuard { inner }
+    }
+}
+
+impl<M: ManageConnection + Send> Drop for GetGuard<M> {
+    fn drop(&mut self) {
+        let mut locked = self.inner.internals.lock();
+        locked.in_flight -= 1;
+    }
+}
+
 impl<M> SharedPool<M>
 where
     M: ManageConnection + Send,
@@ -41,10 +62,20 @@ where
         let conn = locked.conns.pop_front().map(|idle| idle.conn);
         let approvals = match &conn {
             Some(_) => locked.wanted(&self.statics),
-            None => locked.approvals(&self.statics, 1),
+            None => {
+                let approvals = match locked.in_flight > locked.pending_conns {
+                    true => 1,
+                    false => 0,
+                };
+                locked.approvals(&self.statics, approvals)
+            }
         };
 
         (conn, approvals)
+    }
+
+    pub(crate) fn request(self: &Arc<Self>) -> GetGuard<M> {
+        GetGuard::new(self.clone())
     }
 
     pub(crate) fn try_put(self: &Arc<Self>, conn: M::Connection) -> Result<(), M::Connection> {
@@ -81,6 +112,7 @@ where
     conns: VecDeque<IdleConn<M::Connection>>,
     num_conns: u32,
     pending_conns: u32,
+    in_flight: u32,
 }
 
 impl<M> PoolInternals<M>
@@ -202,6 +234,7 @@ where
             conns: VecDeque::new(),
             num_conns: 0,
             pending_conns: 0,
+            in_flight: 0,
         }
     }
 }
