@@ -36,17 +36,6 @@ where
         }
     }
 
-    pub(crate) fn pop(&self) -> (Option<Conn<M::Connection>>, ApprovalIter) {
-        let mut locked = self.internals.lock();
-        let conn = locked.conns.pop_front().map(|idle| idle.conn);
-        let approvals = match &conn {
-            Some(_) => locked.wanted(&self.statics),
-            None => locked.approvals(&self.statics, 1),
-        };
-
-        (conn, approvals)
-    }
-
     pub(crate) fn try_put(self: &Arc<Self>, conn: M::Connection) -> Result<(), M::Connection> {
         let mut locked = self.internals.lock();
         let mut approvals = locked.approvals(&self.statics, 1);
@@ -67,6 +56,10 @@ where
         iter
     }
 
+    pub(crate) fn start_get(self: &Arc<Self>) -> Getting<M> {
+        Getting::new(self.clone())
+    }
+
     pub(crate) fn forward_error(&self, err: M::Error) {
         self.statics.error_sink.sink(err);
     }
@@ -81,6 +74,7 @@ where
     conns: VecDeque<IdleConn<M::Connection>>,
     num_conns: u32,
     pending_conns: u32,
+    in_flight: u32,
 }
 
 impl<M> PoolInternals<M>
@@ -202,6 +196,7 @@ where
             conns: VecDeque::new(),
             num_conns: 0,
             pending_conns: 0,
+            in_flight: 0,
         }
     }
 }
@@ -234,6 +229,43 @@ impl ExactSizeIterator for ApprovalIter {
 #[must_use]
 pub(crate) struct Approval {
     _priv: (),
+}
+
+pub(crate) struct Getting<M: ManageConnection + Send> {
+    inner: Arc<SharedPool<M>>,
+}
+
+impl<M: ManageConnection + Send> Getting<M> {
+    pub(crate) fn get(&self) -> (Option<Conn<M::Connection>>, ApprovalIter) {
+        let mut locked = self.inner.internals.lock();
+        if let Some(IdleConn { conn, .. }) = locked.conns.pop_front() {
+            return (Some(conn), locked.wanted(&self.inner.statics));
+        }
+
+        let approvals = match locked.in_flight > locked.pending_conns {
+            true => 1,
+            false => 0,
+        };
+
+        (None, locked.approvals(&self.inner.statics, approvals))
+    }
+}
+
+impl<M: ManageConnection + Send> Getting<M> {
+    fn new(inner: Arc<SharedPool<M>>) -> Self {
+        {
+            let mut locked = inner.internals.lock();
+            locked.in_flight += 1;
+        }
+        Getting { inner }
+    }
+}
+
+impl<M: ManageConnection + Send> Drop for Getting<M> {
+    fn drop(&mut self) {
+        let mut locked = self.inner.internals.lock();
+        locked.in_flight -= 1;
+    }
 }
 
 #[derive(Debug)]

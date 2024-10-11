@@ -1103,3 +1103,37 @@ async fn test_add_checks_broken_connections() {
     let res = pool.add(conn);
     assert!(matches!(res, Err(AddError::Broken(_))));
 }
+
+#[tokio::test]
+async fn test_reuse_on_drop() {
+    let pool = Pool::builder()
+        .min_idle(0)
+        .max_size(100)
+        .queue_strategy(QueueStrategy::Lifo)
+        .build(OkManager::<FakeConnection>::new())
+        .await
+        .unwrap();
+
+    // The first get should
+    // 1) see nothing in the pool,
+    // 2) spawn a single replenishing approval,
+    // 3) get notified of the new connection and grab it from the pool
+    let conn_0 = pool.get().await.expect("should connect");
+    // Dropping the connection queues up a notify
+    drop(conn_0);
+
+    // The second get should
+    // 1) see the first connection in the pool and grab it
+    let _conn_1 = pool.get().await.expect("should connect");
+
+    // The third get will
+    // 1) see nothing in the pool,
+    // 2) spawn a single replenishing approval,
+    // 3) get notified of the new connection,
+    // 4) see nothing in the pool,
+    // 5) _not_ spawn a single replenishing approval,
+    // 6) get notified of the new connection and grab it from the pool
+    let _conn_2 = pool.get().await.expect("should connect");
+
+    assert_eq!(pool.state().connections, 2);
+}
