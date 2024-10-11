@@ -91,8 +91,9 @@ where
         let mut wait_time_start = None;
 
         let future = async {
+            let getting = self.inner.start_get();
             loop {
-                let (conn, approvals) = self.inner.pop();
+                let (conn, approvals) = getting.get();
                 self.spawn_replenishing_approvals(approvals);
 
                 // Cancellation safety: make sure to wrap the connection in a `PooledConnection`
