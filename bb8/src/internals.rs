@@ -169,7 +169,7 @@ where
                 }
             }
             if let Some(lifetime) = config.max_lifetime {
-                if now - conn.conn.birth >= lifetime {
+                if conn.conn.is_expired(now - lifetime) {
                     closed_max_lifetime += 1;
                     keep &= false;
                 }
@@ -251,6 +251,10 @@ impl<C: Send> Conn<C> {
             conn,
             birth: Instant::now(),
         }
+    }
+
+    pub(crate) fn is_expired(&self, cutoff: Instant) -> bool {
+        self.birth <= cutoff
     }
 }
 
@@ -356,4 +360,29 @@ pub(crate) enum StatsKind {
     Created,
     ClosedBroken,
     ClosedInvalid,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use crate::internals::Conn;
+
+    #[test]
+    fn test_conn_is_expired() {
+        let conn = Conn::new(0);
+
+        assert!(
+            conn.is_expired(conn.birth),
+            "conn is expired for same cuttoff"
+        );
+        assert!(
+            !conn.is_expired(conn.birth - Duration::from_nanos(1)),
+            "conn is not expired for earlier cuttoff"
+        );
+        assert!(
+            conn.is_expired(conn.birth + Duration::from_nanos(1)),
+            "conn is expired for later cuttoff"
+        );
+    }
 }
