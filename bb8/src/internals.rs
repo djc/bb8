@@ -169,7 +169,7 @@ where
                 }
             }
             if let Some(lifetime) = config.max_lifetime {
-                if now - conn.conn.birth >= lifetime {
+                if conn.conn.is_expired(now, lifetime) {
                     closed_max_lifetime += 1;
                     keep &= false;
                 }
@@ -251,6 +251,11 @@ impl<C: Send> Conn<C> {
             conn,
             birth: Instant::now(),
         }
+    }
+
+    pub(crate) fn is_expired(&self, now: Instant, max: Duration) -> bool {
+        // The current age of the connection is longer than the maximum allowed lifetime
+        now - self.birth >= max
     }
 }
 
@@ -356,4 +361,32 @@ pub(crate) enum StatsKind {
     Created,
     ClosedBroken,
     ClosedInvalid,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use crate::internals::Conn;
+
+    #[test]
+    fn test_conn_is_expired() {
+        let conn = Conn {
+            conn: (),
+            birth: Instant::now(),
+        };
+
+        assert!(
+            !conn.is_expired(conn.birth, Duration::from_nanos(1)),
+            "at birth, the connection has not expired"
+        );
+        assert!(
+            !conn.is_expired(Instant::now(), Duration::from_secs(5)),
+            "from setup to now is shorter than 5s, so the connection has not expired"
+        );
+        assert!(
+            conn.is_expired(Instant::now(), Duration::from_nanos(1)),
+            "from setup to now is longer than 1ns, so the connection has expired"
+        );
+    }
 }
