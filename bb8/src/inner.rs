@@ -149,12 +149,20 @@ where
             "handled in caller"
         );
 
+        let is_broken = self.inner.manager.has_broken(&mut conn.conn);
+        let is_expired = match self.inner.statics.max_lifetime {
+            Some(lt) => conn.is_expired(Instant::now(), lt),
+            None => false,
+        };
+
         let mut locked = self.inner.internals.lock();
-        match (state, self.inner.manager.has_broken(&mut conn.conn)) {
+        match (state, is_broken || is_expired) {
             (ConnectionState::Present, false) => locked.put(conn, None, self.inner.clone()),
-            (_, is_broken) => {
+            _ => {
                 if is_broken {
                     self.inner.statistics.record(StatsKind::ClosedBroken);
+                } else if is_expired {
+                    self.inner.statistics.record_connections_reaped(0, 1);
                 }
                 let approvals = locked.dropped(1, &self.inner.statics);
                 self.spawn_replenishing_approvals(approvals);

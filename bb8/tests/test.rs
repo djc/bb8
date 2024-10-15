@@ -12,7 +12,8 @@ use std::{error, fmt};
 use async_trait::async_trait;
 use futures_util::future::{err, lazy, ok, pending, ready, try_join_all, FutureExt};
 use futures_util::stream::{FuturesUnordered, TryStreamExt};
-use tokio::{sync::oneshot, time::timeout};
+use tokio::sync::oneshot;
+use tokio::time::{sleep, timeout};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Error;
@@ -583,6 +584,40 @@ async fn test_max_lifetime() {
 
     // all 5 connections were closed due to max lifetime
     assert_eq!(pool.state().statistics.connections_closed_max_lifetime, 5);
+}
+
+#[tokio::test]
+async fn test_max_lifetime_reap_on_drop() {
+    static DROPPED: AtomicUsize = AtomicUsize::new(0);
+
+    #[derive(Default)]
+    struct Connection;
+
+    impl Drop for Connection {
+        fn drop(&mut self) {
+            DROPPED.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    let manager = OkManager::<Connection>::new();
+    let pool = Pool::builder()
+        .max_lifetime(Some(Duration::from_secs(1)))
+        .connection_timeout(Duration::from_secs(1))
+        .reaper_rate(Duration::from_secs(999))
+        .build(manager)
+        .await
+        .unwrap();
+
+    let conn = pool.get().await;
+
+    // And wait.
+    sleep(Duration::from_secs(2)).await;
+    assert_eq!(DROPPED.load(Ordering::SeqCst), 0);
+
+    // Connection is reaped on drop.
+    drop(conn);
+    assert_eq!(DROPPED.load(Ordering::SeqCst), 1);
+    assert_eq!(pool.state().statistics.connections_closed_max_lifetime, 1);
 }
 
 #[tokio::test]
