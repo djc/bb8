@@ -157,19 +157,18 @@ where
         };
 
         let mut locked = self.inner.internals.lock();
-        match (state, is_broken || is_expired) {
-            (ConnectionState::Present, false) => locked.put(conn, None, self.inner.clone()),
-            _ => {
-                if is_broken {
-                    self.inner.statistics.record(StatsKind::ClosedBroken);
-                } else if is_expired {
-                    self.inner.statistics.record_connections_reaped(0, 1);
-                }
-                let approvals = locked.dropped(1, &self.inner.statics);
-                self.spawn_replenishing_approvals(approvals);
-                self.inner.notify.notify_one();
-            }
+        if let (ConnectionState::Present, false) = (state, is_broken || is_expired) {
+            locked.put(conn, None, self.inner.clone());
+            return;
+        } else if is_broken {
+            self.inner.statistics.record(StatsKind::ClosedBroken);
+        } else if is_expired {
+            self.inner.statistics.record_connections_reaped(0, 1);
         }
+
+        let approvals = locked.dropped(1, &self.inner.statics);
+        self.spawn_replenishing_approvals(approvals);
+        self.inner.notify.notify_one();
     }
 
     /// Adds an external connection to the pool if there is capacity for it.
