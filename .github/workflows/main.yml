@@ -27,7 +27,7 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
       - run: cargo check --all-targets
-      - run: cargo test --all-features
+      - run: cargo test --all-features -- --nocapture
 
   msrv:
     runs-on: ubuntu-latest
