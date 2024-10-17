@@ -26,14 +26,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --workspace --all-targets
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --workspace
+      - run: cargo check --all-targets
+      - run: cargo test --all-features
 
   msrv:
     runs-on: ubuntu-latest
@@ -43,14 +37,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.70.0
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: -p bb8 --all-targets
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: -p bb8
+      - run: cargo test -p bb8
 
   lint:
     runs-on: ubuntu-latest
@@ -59,15 +46,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-      - uses: actions-rs/cargo@v1
-        if: always()
-        with:
-          command: clippy
-          args: --workspace --all-targets -- -D warnings
+      - run: cargo fmt -- --check
+      - run: cargo clippy --all-features --all-targets -- -D warnings
 
   audit:
     runs-on: ubuntu-latest
