@@ -4,6 +4,7 @@
 [![Crates.io](https://img.shields.io/crates/v/bb8.svg)](https://crates.io/crates/bb8)
 [![Build status](https://github.com/djc/bb8/workflows/CI/badge.svg)](https://github.com/djc/bb8/actions?query=workflow%3ACI)
 [![codecov](https://codecov.io/gh/djc/bb8/branch/main/graph/badge.svg)](https://codecov.io/gh/djc/bb8)
+[![Chat](https://img.shields.io/discord/976380008299917365?logo=discord)](https://discord.gg/E4DuUP83V2)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 A full-featured connection pool, designed for asynchronous connections (using
