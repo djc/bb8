@@ -439,7 +439,7 @@ where
     }
 }
 
-impl<'a, M> Deref for PooledConnection<'a, M>
+impl<M> Deref for PooledConnection<'_, M>
 where
     M: ManageConnection,
 {
@@ -450,7 +450,7 @@ where
     }
 }
 
-impl<'a, M> DerefMut for PooledConnection<'a, M>
+impl<M> DerefMut for PooledConnection<'_, M>
 where
     M: ManageConnection,
 {
@@ -459,7 +459,7 @@ where
     }
 }
 
-impl<'a, M> fmt::Debug for PooledConnection<'a, M>
+impl<M> fmt::Debug for PooledConnection<'_, M>
 where
     M: ManageConnection,
     M::Connection: fmt::Debug,
@@ -469,7 +469,7 @@ where
     }
 }
 
-impl<'a, M> Drop for PooledConnection<'a, M>
+impl<M> Drop for PooledConnection<'_, M>
 where
     M: ManageConnection,
 {
