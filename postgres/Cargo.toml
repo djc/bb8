@@ -1,6 +1,6 @@
 [package]
 name = "bb8-postgres"
-version = "0.8.1"
+version = "0.9.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Full-featured async (tokio-based) postgres connection pool (like r2d2)"
@@ -19,7 +19,7 @@ repository = "https://github.com/djc/bb8"
 "with-time-0_3" = ["tokio-postgres/with-time-0_3"]
 
 [dependencies]
-bb8 = { version = "0.8", path = "../bb8" }
+bb8 = { version = "0.9", path = "../bb8" }
 tokio = { version = "1.0.0", features = ["rt"] }
 tokio-postgres = "0.7"
 
