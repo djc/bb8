@@ -4,7 +4,6 @@
 pub use bb8;
 pub use tokio_postgres;
 
-use async_trait::async_trait;
 use tokio_postgres::config::Config;
 use tokio_postgres::tls::{MakeTlsConnect, TlsConnect};
 use tokio_postgres::{Client, Error, Socket};
@@ -45,7 +44,6 @@ where
     }
 }
 
-#[async_trait]
 impl<Tls> bb8::ManageConnection for PostgresConnectionManager<Tls>
 where
     Tls: MakeTlsConnect<Socket> + Clone + Send + Sync + 'static,

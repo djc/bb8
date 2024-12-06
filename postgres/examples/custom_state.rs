@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::ops::Deref;
+use std::pin::Pin;
 use std::str::FromStr;
 
-use async_trait::async_trait;
 use bb8::{CustomizeConnection, Pool};
 use bb8_postgres::PostgresConnectionManager;
 use tokio_postgres::config::Config;
@@ -43,16 +44,20 @@ async fn main() {
 #[derive(Debug)]
 struct Customizer;
 
-#[async_trait]
 impl CustomizeConnection<CustomPostgresConnection, Error> for Customizer {
-    async fn on_acquire(&self, conn: &mut CustomPostgresConnection) -> Result<(), Error> {
-        conn.custom_state
-            .insert(QueryName::BasicSelect, conn.prepare("SELECT 1").await?);
+    fn on_acquire<'a>(
+        &'a self,
+        conn: &'a mut CustomPostgresConnection,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'a>> {
+        Box::pin(async {
+            conn.custom_state
+                .insert(QueryName::BasicSelect, conn.prepare("SELECT 1").await?);
 
-        conn.custom_state
-            .insert(QueryName::Addition, conn.prepare("SELECT 1 + 1 + 1").await?);
+            conn.custom_state
+                .insert(QueryName::Addition, conn.prepare("SELECT 1 + 1 + 1").await?);
 
-        Ok(())
+            Ok(())
+        })
     }
 }
 
@@ -96,7 +101,6 @@ where
     }
 }
 
-#[async_trait]
 impl<Tls> bb8::ManageConnection for CustomPostgresConnectionManager<Tls>
 where
     Tls: MakeTlsConnect<Socket> + Clone + Send + Sync + 'static,

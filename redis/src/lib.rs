@@ -38,7 +38,6 @@
 pub use bb8;
 pub use redis;
 
-use async_trait::async_trait;
 use redis::{aio::MultiplexedConnection, ErrorKind};
 use redis::{Client, IntoConnectionInfo, RedisError};
 
@@ -58,7 +57,6 @@ impl RedisConnectionManager {
     }
 }
 
-#[async_trait]
 impl bb8::ManageConnection for RedisConnectionManager {
     type Connection = MultiplexedConnection;
     type Error = RedisError;

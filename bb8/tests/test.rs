@@ -9,7 +9,6 @@ use std::task::Poll;
 use std::time::Duration;
 use std::{error, fmt};
 
-use async_trait::async_trait;
 use futures_util::future::{err, lazy, ok, pending, ready, try_join_all, FutureExt};
 use futures_util::stream::{FuturesUnordered, TryStreamExt};
 use tokio::sync::oneshot;
@@ -43,7 +42,6 @@ impl<C> OkManager<C> {
     }
 }
 
-#[async_trait]
 impl<C> ManageConnection for OkManager<C>
 where
     C: Default + Send + Sync + 'static,
@@ -78,7 +76,6 @@ impl<C> NthConnectionFailManager<C> {
     }
 }
 
-#[async_trait]
 impl<C> ManageConnection for NthConnectionFailManager<C>
 where
     C: Default + Send + Sync + 'static,
@@ -214,7 +211,6 @@ struct BrokenConnectionManager<C> {
     _c: PhantomData<C>,
 }
 
-#[async_trait]
 impl<C: Default + Send + Sync + 'static> ManageConnection for BrokenConnectionManager<C> {
     type Connection = C;
     type Error = Error;
@@ -380,7 +376,6 @@ async fn test_now_invalid() {
 
     struct Handler;
 
-    #[async_trait]
     impl ManageConnection for Handler {
         type Connection = FakeConnection;
         type Error = Error;
@@ -689,7 +684,6 @@ async fn test_conns_drop_on_pool_drop() {
 
     struct Handler;
 
-    #[async_trait]
     impl ManageConnection for Handler {
         type Connection = Connection;
         type Error = Error;
@@ -741,7 +735,6 @@ async fn test_retry() {
     struct Connection;
     struct Handler;
 
-    #[async_trait]
     impl ManageConnection for Handler {
         type Connection = Connection;
         type Error = Error;
@@ -787,7 +780,6 @@ async fn test_conn_fail_once() {
         }
     }
 
-    #[async_trait]
     impl ManageConnection for Handler {
         type Connection = Connection;
         type Error = Error;
@@ -912,11 +904,15 @@ async fn test_customize_connection_acquire() {
         count: AtomicUsize,
     }
 
-    #[async_trait]
     impl<E: 'static> CustomizeConnection<Connection, E> for CountingCustomizer {
-        async fn on_acquire(&self, connection: &mut Connection) -> Result<(), E> {
-            connection.custom_field = 1 + self.count.fetch_add(1, Ordering::SeqCst);
-            Ok(())
+        fn on_acquire<'a>(
+            &'a self,
+            connection: &'a mut Connection,
+        ) -> Pin<Box<dyn Future<Output = Result<(), E>> + Send + 'a>> {
+            Box::pin(async move {
+                connection.custom_field = 1 + self.count.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
         }
     }
 
@@ -952,7 +948,6 @@ async fn test_broken_connections_dont_starve_pool() {
     #[derive(Debug)]
     struct Connection;
 
-    #[async_trait::async_trait]
     impl bb8::ManageConnection for ConnectionManager {
         type Connection = Connection;
         type Error = Infallible;
