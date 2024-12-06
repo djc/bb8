@@ -57,6 +57,7 @@ jobs:
 
   coverage:
     runs-on: ubuntu-latest
+    environment: Coverage
     env:
       CARGO_TERM_COLOR: always
     steps:
