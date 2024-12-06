@@ -19,7 +19,6 @@ repository = "https://github.com/djc/bb8"
 "with-time-0_3" = ["tokio-postgres/with-time-0_3"]
 
 [dependencies]
-async-trait = "0.1"
 bb8 = { version = "0.8", path = "../bb8" }
 tokio = { version = "1.0.0", features = ["rt"] }
 tokio-postgres = "0.7"

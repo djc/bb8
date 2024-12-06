@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 use std::error;
 use std::fmt;
+use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use std::pin::Pin;
 use std::time::Duration;
-
-use async_trait::async_trait;
 
 use crate::inner::PoolInner;
 use crate::internals::Conn;
@@ -381,7 +381,6 @@ impl<M: ManageConnection> Builder<M> {
 }
 
 /// A trait which provides connection-specific functionality.
-#[async_trait]
 pub trait ManageConnection: Sized + Send + Sync + 'static {
     /// The connection type this manager deals with.
     type Connection: Send + 'static;
@@ -389,15 +388,17 @@ pub trait ManageConnection: Sized + Send + Sync + 'static {
     type Error: fmt::Debug + Send + 'static;
 
     /// Attempts to create a new connection.
-    async fn connect(&self) -> Result<Self::Connection, Self::Error>;
+    fn connect(&self) -> impl Future<Output = Result<Self::Connection, Self::Error>> + Send;
     /// Determines if the connection is still connected to the database.
-    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error>;
+    fn is_valid(
+        &self,
+        conn: &mut Self::Connection,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
     /// Synchronously determine if the connection is no longer usable, if possible.
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
 }
 
 /// A trait which provides functionality to initialize a connection
-#[async_trait]
 pub trait CustomizeConnection<C: Send + 'static, E: 'static>:
     fmt::Debug + Send + Sync + 'static
 {
@@ -406,8 +407,11 @@ pub trait CustomizeConnection<C: Send + 'static, E: 'static>:
     ///
     /// The default implementation simply returns `Ok(())`. If this method returns an
     /// error, it will be forwarded to the configured error sink.
-    async fn on_acquire(&self, _connection: &mut C) -> Result<(), E> {
-        Ok(())
+    fn on_acquire<'a>(
+        &'a self,
+        _connection: &'a mut C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), E>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
     }
 }
 

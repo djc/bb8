@@ -10,7 +10,6 @@ workspace = ".."
 readme = "../README.md"
 
 [dependencies]
-async-trait = "0.1"
 futures-util = { version = "0.3.2", default-features = false, features = ["alloc"] }
 parking_lot = { version = "0.12", optional = true }
 tokio = { version = "1.0", features = ["rt", "sync", "time"] }
