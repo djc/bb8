@@ -1,6 +1,5 @@
 [licenses]
-allow-osi-fsf-free = "either"
-copyleft = "warn"
+allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "MIT", "Unicode-3.0"]
 
 # Transitive dependencies via tokio-postgres, disabled by default
 [advisories]
