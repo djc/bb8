@@ -1,6 +1,6 @@
 [package]
 name = "bb8-redis"
-version = "0.20.0"
+version = "0.21.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Full-featured async (tokio-based) redis connection pool (like r2d2)"
