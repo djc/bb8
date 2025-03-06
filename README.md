@@ -28,7 +28,7 @@ Backend | Adapter Crate
 [redis_cluster_async](https://crates.io/crates/redis_cluster_async) | [bb8-redis-cluster](https://crates.io/crates/bb8-redis-cluster)
 [rsmq](https://github.com/smrchy/rsmq) | [rsmq_async](https://crates.io/crates/rsmq_async)
 [bolt-client](https://crates.io/crates/bolt-client) | [bb8-bolt](https://crates.io/crates/bb8-bolt)
-[diesel](https://crates.io/crates/diesel) | [bb8-diesel](https://crates.io/crates/bb8-diesel)
+[diesel](https://crates.io/crates/diesel) | [diesel_async](https://github.com/weiznich/diesel_async)
 [tiberius](https://crates.io/crates/tiberius) | [bb8-tiberius](https://crates.io/crates/bb8-tiberius)
 [nebula-client](https://crates.io/crates/nebula-client) | [bb8-nebula](https://crates.io/crates/bb8-nebula)
 [memcache-async](https://github.com/vavrusa/memcache-async) | [bb8-memcached](https://crates.io/crates/bb8-memcached)
