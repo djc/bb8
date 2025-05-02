@@ -6,4 +6,5 @@ allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "MIT", "Unicode-3.0"]
 ignore = [
     "RUSTSEC-2022-0004",
     "RUSTSEC-2020-0056",
+    "RUSTSEC-2025-0025",
 ]
