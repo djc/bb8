@@ -9,7 +9,7 @@ repository = "https://github.com/djc/bb8"
 
 [dependencies]
 bb8 = { version = "0.9", path = "../bb8" }
-redis = { version = "0.31", default-features = false, features = ["tokio-comp"] }
+redis = { version = "0.32", default-features = false, features = ["tokio-comp"] }
 
 [dev-dependencies]
 futures-util = "0.3.15"
