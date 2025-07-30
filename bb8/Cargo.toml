@@ -1,8 +1,8 @@
 [package]
 name = "bb8"
 version = "0.9.0"
-edition = "2021"
-rust-version = "1.75"
+edition = "2024"
+rust-version = "1.88.0"
 description = "Full-featured async (tokio-based) connection pool (like r2d2)"
 license = "MIT"
 repository = "https://github.com/djc/bb8"
@@ -10,15 +10,15 @@ workspace = ".."
 readme = "../README.md"
 
 [dependencies]
-futures-util = { version = "0.3.2", default-features = false, features = ["alloc"] }
+futures-util = { version = "0.3.31", default-features = false, features = ["alloc"] }
 parking_lot = { version = "0.12", optional = true }
-tokio = { version = "1.0", features = ["rt", "sync", "time"] }
+tokio = { version = "1.47.0", features = ["rt", "sync", "time"] }
 
 [target.'cfg(not(target_has_atomic = "u64"))'.dependencies]
 portable-atomic = "1"
 
 [dev-dependencies]
-tokio = { version = "1.0", features = ["macros"] }
+tokio = { version = "1.47.0", features = ["macros"] }
 
 [features]
 parking_lot = ["dep:parking_lot", "tokio/parking_lot"]
