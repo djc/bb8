@@ -226,6 +226,7 @@ where
                         locked.connect_failed(approval);
                         return Err(e);
                     } else {
+                        self.inner.forward_error(e);
                         delay = max(Duration::from_millis(200), delay);
                         delay = min(self.inner.statics.connection_timeout / 2, delay * 2);
                         sleep(delay).await;
