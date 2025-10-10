@@ -1132,3 +1132,37 @@ async fn test_reuse_on_drop() {
 
     assert_eq!(pool.state().connections, 2);
 }
+
+#[tokio::test]
+async fn test_fast_fail_on_non_retry() {
+    struct Manager;
+
+    impl bb8::ManageConnection for Manager {
+        type Connection = ();
+        type Error = ();
+
+        async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+            Err(())
+        }
+
+        async fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn has_broken(&self, _conn: &mut Self::Connection) -> bool {
+            false
+        }
+    }
+
+    let pool = bb8::Builder::new()
+        .retry_connection(false)
+        .connection_timeout(Duration::from_millis(100))
+        .build(Manager)
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    pool.get().await.ok();
+
+    // pool should fail fast, not wait for the full timeout
+    assert!(started.elapsed().as_millis() < 100, "took too long");
+}
