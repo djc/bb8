@@ -94,6 +94,9 @@ where
             let getting = self.inner.start_get();
             loop {
                 let (conn, approvals) = getting.get();
+                if approvals.len() == 0 && !self.inner.statics.retry_connection {
+                    return Err(RunError::TimedOut);
+                }
                 self.spawn_replenishing_approvals(approvals);
 
                 // Cancellation safety: make sure to wrap the connection in a `PooledConnection`

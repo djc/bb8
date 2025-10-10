@@ -246,10 +246,11 @@ impl<M: ManageConnection + Send> Getting<M> {
             return (Some(conn), locked.wanted(&self.inner.statics));
         }
 
-        let approvals = match locked.in_flight > locked.pending_conns {
-            true => 1,
-            false => 0,
-        };
+        let approvals =
+            match self.inner.statics.retry_connection && locked.in_flight > locked.pending_conns {
+                true => 1,
+                false => 0,
+            };
 
         (None, locked.approvals(&self.inner.statics, approvals))
     }
