@@ -320,6 +320,7 @@ impl<C: Send> From<Conn<C>> for IdleConn<C> {
 
 #[derive(Default)]
 pub(crate) struct AtomicStatistics {
+    pub(crate) get_started: AtomicU64,
     pub(crate) get_direct: AtomicU64,
     pub(crate) get_waited: AtomicU64,
     pub(crate) get_timed_out: AtomicU64,
@@ -332,6 +333,10 @@ pub(crate) struct AtomicStatistics {
 }
 
 impl AtomicStatistics {
+    pub(crate) fn record_get_started(&self) {
+        self.get_started.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub(crate) fn record_get(&self, kind: StatsGetKind, wait_time_start: Option<Instant>) {
         match kind {
             StatsGetKind::Direct => self.get_direct.fetch_add(1, Ordering::Relaxed),
@@ -370,6 +375,7 @@ impl AtomicStatistics {
 impl From<&AtomicStatistics> for Statistics {
     fn from(item: &AtomicStatistics) -> Self {
         Self {
+            get_started: item.get_started.load(Ordering::Relaxed),
             get_direct: item.get_direct.load(Ordering::Relaxed),
             get_waited: item.get_waited.load(Ordering::Relaxed),
             get_timed_out: item.get_timed_out.load(Ordering::Relaxed),
