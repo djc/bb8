@@ -125,6 +125,8 @@ where
             }
         };
 
+        self.inner.statistics.record_get_started();
+
         let result = match timeout(self.inner.statics.connection_timeout, future).await {
             Ok(result) => result,
             _ => {

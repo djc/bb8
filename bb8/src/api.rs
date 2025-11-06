@@ -101,6 +101,12 @@ pub struct State {
 #[derive(Debug, Default)]
 #[non_exhaustive]
 pub struct Statistics {
+    /// Total gets started.
+    ///
+    /// This counter is incremented before the `get` operation starts waiting,
+    /// so that it's possible to monitor the size of the queue by computing the
+    /// different with the other `get_*` statistics.
+    pub get_started: u64,
     /// Total gets performed that did not have to wait for a connection.
     pub get_direct: u64,
     /// Total gets performed that had to wait for a connection available.
