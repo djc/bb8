@@ -105,13 +105,13 @@ pub struct Statistics {
     ///
     /// This counter is incremented before the `get` operation starts waiting,
     /// so that it's possible to monitor the size of the queue by computing the
-    /// different with the other `get_*` statistics.
+    /// difference with the other `get_*` statistics.
     pub get_started: u64,
-    /// Total gets performed that did not have to wait for a connection.
+    /// Total gets completed that did not have to wait for a connection.
     pub get_direct: u64,
-    /// Total gets performed that had to wait for a connection available.
+    /// Total gets completed that had to wait for a connection available.
     pub get_waited: u64,
-    /// Total gets performed that timed out while waiting for a connection.
+    /// Total gets completed that timed out while waiting for a connection.
     pub get_timed_out: u64,
     /// Total time accumulated waiting for a connection.
     pub get_wait_time: Duration,
@@ -127,6 +127,18 @@ pub struct Statistics {
     /// Total connections that were closed because they reached the max
     /// idle timeout.
     pub connections_closed_idle_timeout: u64,
+}
+
+impl Statistics {
+    /// Total pending gets waiting for a connection.
+    pub fn pending_gets(&self) -> u64 {
+        self.get_started - self.completed_gets()
+    }
+
+    /// Total gets completed.
+    pub fn completed_gets(&self) -> u64 {
+        self.get_direct + self.get_waited + self.get_timed_out
+    }
 }
 
 /// A builder for a connection pool.
