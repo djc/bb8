@@ -34,6 +34,7 @@ Backend | Adapter Crate
 [memcache-async](https://github.com/vavrusa/memcache-async) | [bb8-memcached](https://crates.io/crates/bb8-memcached)
 [lapin](https://crates.io/crates/lapin) | [bb8-lapin](https://crates.io/crates/bb8-lapin)
 [arangors](https://crates.io/crates/arangors) | [bb8-arangodb](https://crates.io/crates/bb8-arangodb)
+[tonic](https://crates.io/crates/tonic) | [bb8-tonic](https://crates.io/crates/bb8-tonic)
 
 ## Example
 
