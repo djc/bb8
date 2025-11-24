@@ -48,17 +48,17 @@ impl<M: ManageConnection> Pool<M> {
         self.inner.connect().await
     }
 
-    /// Returns information about the current state of the pool.
-    pub fn state(&self) -> State {
-        self.inner.state()
-    }
-
     /// Adds a connection to the pool.
     ///
     /// If the connection is broken, or the pool is at capacity, the
     /// connection is not added and instead returned to the caller in Err.
     pub fn add(&self, conn: M::Connection) -> Result<(), AddError<M::Connection>> {
         self.inner.try_put(conn)
+    }
+
+    /// Returns information about the current state of the pool.
+    pub fn state(&self) -> State {
+        self.inner.state()
     }
 }
 
