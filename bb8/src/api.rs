@@ -60,6 +60,11 @@ impl<M: ManageConnection> Pool<M> {
     pub fn state(&self) -> State {
         self.inner.state()
     }
+
+    /// Expose a representation of the original pool configuration
+    pub fn config(&self) -> Config {
+        Config::from(self.inner.builder())
+    }
 }
 
 impl<M: ManageConnection> Clone for Pool<M> {
@@ -132,6 +137,59 @@ impl Statistics {
     }
 }
 
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct Config {
+    /// The maximum number of connections allowed.
+    pub max_size: u32,
+    /// The minimum idle connection count the pool will attempt to maintain.
+    pub min_idle: Option<u32>,
+    /// Whether or not to test the connection on checkout.
+    pub test_on_check_out: bool,
+    /// The maximum lifetime, if any, that a connection is allowed.
+    pub max_lifetime: Option<Duration>,
+    /// The duration, if any, after which idle_connections in excess of `min_idle` are closed.
+    pub idle_timeout: Option<Duration>,
+    /// The duration to wait to start a connection before giving up.
+    pub connection_timeout: Duration,
+    /// Enable/disable automatic retries on connection creation.
+    pub retry_connection: bool,
+    /// The time interval used to wake up and reap connections.
+    pub reaper_rate: Duration,
+    /// Queue strategy (FIFO or LIFO)
+    pub queue_strategy: QueueStrategy,
+}
+
+impl<M: ManageConnection> From<&Builder<M>> for Config {
+    fn from(builder: &Builder<M>) -> Self {
+        let Builder {
+            max_size,
+            min_idle,
+            test_on_check_out,
+            max_lifetime,
+            idle_timeout,
+            connection_timeout,
+            retry_connection,
+            error_sink: _,
+            reaper_rate,
+            queue_strategy,
+            connection_customizer: _,
+            _p: _,
+        } = builder;
+
+        Self {
+            max_size: *max_size,
+            min_idle: *min_idle,
+            test_on_check_out: *test_on_check_out,
+            max_lifetime: *max_lifetime,
+            idle_timeout: *idle_timeout,
+            connection_timeout: *connection_timeout,
+            retry_connection: *retry_connection,
+            reaper_rate: *reaper_rate,
+            queue_strategy: *queue_strategy,
+        }
+    }
+}
 /// A builder for a connection pool.
 #[derive(Debug)]
 pub struct Builder<M: ManageConnection> {

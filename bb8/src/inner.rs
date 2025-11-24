@@ -235,6 +235,10 @@ impl<M: ManageConnection + Send> PoolInner<M> {
             None => Ok(()),
         }
     }
+
+    pub(crate) fn builder(&self) -> &Builder<M> {
+        &self.inner.statics
+    }
 }
 
 impl<M: ManageConnection> Clone for PoolInner<M> {
