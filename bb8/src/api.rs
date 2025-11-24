@@ -15,20 +15,6 @@ pub struct Pool<M: ManageConnection> {
     pub(crate) inner: PoolInner<M>,
 }
 
-impl<M: ManageConnection> Clone for Pool<M> {
-    fn clone(&self) -> Self {
-        Pool {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl<M: ManageConnection> fmt::Debug for Pool<M> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_fmt(format_args!("Pool({:?})", self.inner))
-    }
-}
-
 impl<M: ManageConnection> Pool<M> {
     /// Returns a `Builder` instance to configure a new pool.
     pub fn builder() -> Builder<M> {
@@ -73,6 +59,20 @@ impl<M: ManageConnection> Pool<M> {
     /// connection is not added and instead returned to the caller in Err.
     pub fn add(&self, conn: M::Connection) -> Result<(), AddError<M::Connection>> {
         self.inner.try_put(conn)
+    }
+}
+
+impl<M: ManageConnection> Clone for Pool<M> {
+    fn clone(&self) -> Self {
+        Pool {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<M: ManageConnection> fmt::Debug for Pool<M> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_fmt(format_args!("Pool({:?})", self.inner))
     }
 }
 
