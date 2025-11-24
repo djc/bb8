@@ -42,10 +42,7 @@ impl<C> OkManager<C> {
     }
 }
 
-impl<C> ManageConnection for OkManager<C>
-where
-    C: Default + Send + Sync + 'static,
-{
+impl<C: Default + Send + Sync + 'static> ManageConnection for OkManager<C> {
     type Connection = C;
     type Error = Error;
 
@@ -76,10 +73,7 @@ impl<C> NthConnectionFailManager<C> {
     }
 }
 
-impl<C> ManageConnection for NthConnectionFailManager<C>
-where
-    C: Default + Send + Sync + 'static,
-{
+impl<C: Default + Send + Sync + 'static> ManageConnection for NthConnectionFailManager<C> {
     type Connection = C;
     type Error = Error;
 

@@ -14,17 +14,11 @@ use crate::api::{
 };
 use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, StatsGetKind, StatsKind};
 
-pub(crate) struct PoolInner<M>
-where
-    M: ManageConnection + Send,
-{
+pub(crate) struct PoolInner<M: ManageConnection + Send> {
     inner: Arc<SharedPool<M>>,
 }
 
-impl<M> PoolInner<M>
-where
-    M: ManageConnection + Send,
-{
+impl<M: ManageConnection + Send> PoolInner<M> {
     pub(crate) fn new(builder: Builder<M>, manager: M) -> Self {
         let inner = Arc::new(SharedPool::new(builder, manager));
 
@@ -191,10 +185,7 @@ where
     }
 
     // Outside of Pool to avoid borrow splitting issues on self
-    async fn add_connection(&self, approval: Approval) -> Result<(), M::Error>
-    where
-        M: ManageConnection,
-    {
+    async fn add_connection(&self, approval: Approval) -> Result<(), M::Error> {
         let new_shared = Arc::downgrade(&self.inner);
         let shared = match new_shared.upgrade() {
             None => return Ok(()),
@@ -246,10 +237,7 @@ where
     }
 }
 
-impl<M> Clone for PoolInner<M>
-where
-    M: ManageConnection,
-{
+impl<M: ManageConnection> Clone for PoolInner<M> {
     fn clone(&self) -> Self {
         PoolInner {
             inner: self.inner.clone(),
@@ -257,10 +245,7 @@ where
     }
 }
 
-impl<M> fmt::Debug for PoolInner<M>
-where
-    M: ManageConnection,
-{
+impl<M: ManageConnection> fmt::Debug for PoolInner<M> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_fmt(format_args!("PoolInner({:p})", self.inner))
     }
