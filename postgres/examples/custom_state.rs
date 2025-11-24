@@ -83,17 +83,11 @@ impl Deref for CustomPostgresConnection {
     }
 }
 
-struct CustomPostgresConnectionManager<Tls>
-where
-    Tls: MakeTlsConnect<Socket>,
-{
+struct CustomPostgresConnectionManager<Tls: MakeTlsConnect<Socket>> {
     inner: PostgresConnectionManager<Tls>,
 }
 
-impl<Tls> CustomPostgresConnectionManager<Tls>
-where
-    Tls: MakeTlsConnect<Socket>,
-{
+impl<Tls: MakeTlsConnect<Socket>> CustomPostgresConnectionManager<Tls> {
     pub fn new(config: Config, tls: Tls) -> Self {
         Self {
             inner: PostgresConnectionManager::new(config, tls),

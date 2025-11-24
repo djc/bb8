@@ -11,17 +11,11 @@ use crate::inner::PoolInner;
 use crate::internals::Conn;
 
 /// A generic connection pool.
-pub struct Pool<M>
-where
-    M: ManageConnection,
-{
+pub struct Pool<M: ManageConnection> {
     pub(crate) inner: PoolInner<M>,
 }
 
-impl<M> Clone for Pool<M>
-where
-    M: ManageConnection,
-{
+impl<M: ManageConnection> Clone for Pool<M> {
     fn clone(&self) -> Self {
         Pool {
             inner: self.inner.clone(),
@@ -29,10 +23,7 @@ where
     }
 }
 
-impl<M> fmt::Debug for Pool<M>
-where
-    M: ManageConnection,
-{
+impl<M: ManageConnection> fmt::Debug for Pool<M> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_fmt(format_args!("Pool({:?})", self.inner))
     }
@@ -434,19 +425,13 @@ pub trait CustomizeConnection<C: Send + 'static, E: 'static>:
 }
 
 /// A smart pointer wrapping a connection.
-pub struct PooledConnection<'a, M>
-where
-    M: ManageConnection,
-{
+pub struct PooledConnection<'a, M: ManageConnection> {
     pool: Cow<'a, PoolInner<M>>,
     conn: Option<Conn<M::Connection>>,
     pub(crate) state: ConnectionState,
 }
 
-impl<'a, M> PooledConnection<'a, M>
-where
-    M: ManageConnection,
-{
+impl<'a, M: ManageConnection> PooledConnection<'a, M> {
     pub(crate) fn new(pool: &'a PoolInner<M>, conn: Conn<M::Connection>) -> Self {
         Self {
             pool: Cow::Borrowed(pool),
@@ -461,10 +446,7 @@ where
     }
 }
 
-impl<M> Deref for PooledConnection<'_, M>
-where
-    M: ManageConnection,
-{
+impl<M: ManageConnection> Deref for PooledConnection<'_, M> {
     type Target = M::Connection;
 
     fn deref(&self) -> &Self::Target {
@@ -472,10 +454,7 @@ where
     }
 }
 
-impl<M> DerefMut for PooledConnection<'_, M>
-where
-    M: ManageConnection,
-{
+impl<M: ManageConnection> DerefMut for PooledConnection<'_, M> {
     fn deref_mut(&mut self) -> &mut M::Connection {
         &mut self.conn.as_mut().unwrap().conn
     }
@@ -491,10 +470,7 @@ where
     }
 }
 
-impl<M> Drop for PooledConnection<'_, M>
-where
-    M: ManageConnection,
-{
+impl<M: ManageConnection> Drop for PooledConnection<'_, M> {
     fn drop(&mut self) {
         if let ConnectionState::Extracted = self.state {
             return;
@@ -523,10 +499,7 @@ pub enum RunError<E> {
     TimedOut,
 }
 
-impl<E> fmt::Display for RunError<E>
-where
-    E: error::Error + 'static,
-{
+impl<E: error::Error + 'static> fmt::Display for RunError<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             RunError::User(ref err) => write!(f, "{err}"),
@@ -535,10 +508,7 @@ where
     }
 }
 
-impl<E> error::Error for RunError<E>
-where
-    E: error::Error + 'static,
-{
+impl<E: error::Error + 'static> error::Error for RunError<E> {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
             RunError::User(ref err) => Some(err),
@@ -547,10 +517,7 @@ where
     }
 }
 
-impl<E> From<E> for RunError<E>
-where
-    E: error::Error,
-{
+impl<E: error::Error> From<E> for RunError<E> {
     fn from(error: E) -> Self {
         Self::User(error)
     }

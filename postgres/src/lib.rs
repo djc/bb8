@@ -13,31 +13,22 @@ use std::str::FromStr;
 
 /// A `bb8::ManageConnection` for `tokio_postgres::Connection`s.
 #[derive(Clone)]
-pub struct PostgresConnectionManager<Tls>
-where
-    Tls: MakeTlsConnect<Socket>,
-{
+pub struct PostgresConnectionManager<Tls: MakeTlsConnect<Socket>> {
     config: Config,
     tls: Tls,
 }
 
-impl<Tls> PostgresConnectionManager<Tls>
-where
-    Tls: MakeTlsConnect<Socket>,
-{
+impl<Tls: MakeTlsConnect<Socket>> PostgresConnectionManager<Tls> {
     /// Create a new `PostgresConnectionManager` with the specified `config`.
     pub fn new(config: Config, tls: Tls) -> PostgresConnectionManager<Tls> {
         PostgresConnectionManager { config, tls }
     }
 
     /// Create a new `PostgresConnectionManager`, parsing the config from `params`.
-    pub fn new_from_stringlike<T>(
-        params: T,
+    pub fn new_from_stringlike(
+        params: impl ToString,
         tls: Tls,
-    ) -> Result<PostgresConnectionManager<Tls>, Error>
-    where
-        T: ToString,
-    {
+    ) -> Result<PostgresConnectionManager<Tls>, Error> {
         let stringified_params = params.to_string();
         let config = Config::from_str(&stringified_params)?;
         Ok(Self::new(config, tls))
@@ -71,10 +62,7 @@ where
     }
 }
 
-impl<Tls> fmt::Debug for PostgresConnectionManager<Tls>
-where
-    Tls: MakeTlsConnect<Socket>,
-{
+impl<Tls: MakeTlsConnect<Socket>> fmt::Debug for PostgresConnectionManager<Tls> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("PostgresConnectionManager")
             .field("config", &self.config)

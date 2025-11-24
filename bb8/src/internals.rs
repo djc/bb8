@@ -15,10 +15,7 @@ use crate::lock::Mutex;
 
 /// The guts of a `Pool`.
 #[allow(missing_debug_implementations)]
-pub(crate) struct SharedPool<M>
-where
-    M: ManageConnection + Send,
-{
+pub(crate) struct SharedPool<M: ManageConnection + Send> {
     pub(crate) statics: Builder<M>,
     pub(crate) manager: M,
     pub(crate) internals: Mutex<PoolInternals<M>>,
@@ -26,10 +23,7 @@ where
     pub(crate) statistics: AtomicStatistics,
 }
 
-impl<M> SharedPool<M>
-where
-    M: ManageConnection + Send,
-{
+impl<M: ManageConnection + Send> SharedPool<M> {
     pub(crate) fn new(statics: Builder<M>, manager: M) -> Self {
         Self {
             statics,
@@ -71,20 +65,14 @@ where
 
 /// The pool data that must be protected by a lock.
 #[allow(missing_debug_implementations)]
-pub(crate) struct PoolInternals<M>
-where
-    M: ManageConnection,
-{
+pub(crate) struct PoolInternals<M: ManageConnection> {
     conns: VecDeque<IdleConn<M::Connection>>,
     num_conns: u32,
     pending_conns: u32,
     in_flight: u32,
 }
 
-impl<M> PoolInternals<M>
-where
-    M: ManageConnection,
-{
+impl<M: ManageConnection> PoolInternals<M> {
     pub(crate) fn put(
         &mut self,
         conn: Conn<M::Connection>,
@@ -191,10 +179,7 @@ where
     }
 }
 
-impl<M> Default for PoolInternals<M>
-where
-    M: ManageConnection,
-{
+impl<M: ManageConnection> Default for PoolInternals<M> {
     fn default() -> Self {
         Self {
             conns: VecDeque::new(),
@@ -273,10 +258,7 @@ impl<M: ManageConnection + Send> Drop for Getting<M> {
 }
 
 #[derive(Debug)]
-pub(crate) struct Conn<C>
-where
-    C: Send,
-{
+pub(crate) struct Conn<C: Send> {
     pub(crate) conn: C,
     birth: Instant,
 }
@@ -301,10 +283,7 @@ impl<C: Send> From<IdleConn<C>> for Conn<C> {
     }
 }
 
-struct IdleConn<C>
-where
-    C: Send,
-{
+struct IdleConn<C: Send> {
     conn: Conn<C>,
     idle_start: Instant,
 }
