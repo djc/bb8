@@ -1,5 +1,5 @@
 [licenses]
-allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "MIT", "Unicode-3.0"]
+allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "BSL-1.0", "MIT", "Unicode-3.0"]
 
 # Transitive dependencies via tokio-postgres, disabled by default
 [advisories]
