@@ -26,8 +26,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-      - run: cargo check --all-targets
-      - run: cargo test --all-features -- --nocapture
+      - run: cargo check --locked --all-targets
+      - run: cargo test --locked --all-features -- --nocapture
 
   msrv:
     runs-on: ubuntu-latest
@@ -37,7 +37,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.75.0
-      - run: cargo test -p bb8
+      - run: cargo test -p bb8 --locked
 
   lint:
     runs-on: ubuntu-latest
@@ -47,7 +47,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - run: cargo fmt -- --check
-      - run: cargo clippy --all-features --all-targets -- -D warnings
+      - run: cargo clippy --locked --all-features --all-targets -- -D warnings
 
   audit:
     runs-on: ubuntu-latest
@@ -66,7 +66,7 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate code coverage
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov --locked --all-features --workspace --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
