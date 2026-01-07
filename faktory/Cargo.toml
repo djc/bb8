@@ -1,0 +1,36 @@
+[package]
+name = "bb8-faktory"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Full-featured async (tokio-based) Faktory work server connection pool (like r2d2)"
+license = "MIT"
+repository = "https://github.com/djc/bb8"
+
+[features]
+default = []
+native-tls = ["faktory/native_tls", "dep:native-tls", "dep:tokio-native-tls", "dep:url"]
+rustls = ["faktory/rustls", "dep:tokio-rustls", "dep:rustls", "dep:url"]
+
+[dependencies]
+bb8 = { version = "0.9", path = "../bb8" }
+faktory = "0.13"
+tokio = { version = "1.0.0", features = ["io-util"] }
+url = { version = "2", optional = true }
+
+# Optional TLS dependencies
+native-tls = { version = "0.2", optional = true }
+tokio-native-tls = { version = "0.3", optional = true }
+tokio-rustls = { version = "0.25", optional = true }
+rustls = { version = "0.22", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.0.0", features = ["macros", "rt-multi-thread"] }
+
+[[example]]
+name = "native_tls"
+required-features = ["native-tls"]
+
+[[example]]
+name = "rustls"
+required-features = ["rustls"]
