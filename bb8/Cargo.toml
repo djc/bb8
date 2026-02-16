@@ -10,7 +10,7 @@ workspace = ".."
 readme = "../README.md"
 
 [dependencies]
-futures-util = { version = "0.3.2", default-features = false, features = ["alloc"] }
+futures-util = { version = "0.3.32", default-features = false, features = ["alloc"] }
 parking_lot = { version = "0.12", optional = true }
 tokio = { version = "1.0", features = ["rt", "sync", "time"] }
 
