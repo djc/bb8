@@ -1,5 +1,9 @@
 //! Redis support for the `bb8` connection pool.
 //!
+//! _Due to the default connection config, pooled connections have a response timeout and can't be used for blocking commands._ \
+//! _See [`get_multiplexed_async_connection`](redis::Client::get_multiplexed_async_connection) and [`AsyncConnectionConfig`](redis::AsyncConnectionConfig) for more details._
+//!
+//!
 //! # Example
 //!
 //! ```
