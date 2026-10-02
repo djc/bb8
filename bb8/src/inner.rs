@@ -221,6 +221,7 @@ impl<M: ManageConnection + Send> PoolInner<M> {
                 }
                 Err(e) => {
                     if !self.inner.statics.retry_connection
+                        || self.inner.manager.error_is_fatal(&e)
                         || Instant::now() - start > self.inner.statics.connection_timeout
                     {
                         return Err(e);

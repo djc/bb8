@@ -12,6 +12,7 @@ struct Failure;
 
 struct Controlled {
     attempts: mpsc::UnboundedSender<oneshot::Sender<Result<(), Failure>>>,
+    fatal: bool,
 }
 
 impl ManageConnection for Controlled {
@@ -30,6 +31,10 @@ impl ManageConnection for Controlled {
 
     fn has_broken(&self, _: &mut ()) -> bool {
         false
+    }
+
+    fn error_is_fatal(&self, _: &Failure) -> bool {
+        self.fatal
     }
 }
 
@@ -54,7 +59,10 @@ async fn failed_background_attempt_wakes_capacity_waiter() {
         .min_idle(1)
         .retry_connection(false)
         .connection_timeout(Duration::from_secs(1))
-        .build_unchecked(Controlled { attempts });
+        .build_unchecked(Controlled {
+            attempts,
+            fatal: false,
+        });
     let background = rx.recv().await.unwrap();
     let wakes = Arc::new(Wakes::default());
     let waker = Waker::from(wakes.clone());
@@ -73,4 +81,41 @@ async fn failed_background_attempt_wakes_capacity_waiter() {
         .is_pending());
     rx.recv().await.unwrap().send(Ok(())).unwrap();
     get.await.unwrap();
+}
+
+#[derive(Debug)]
+struct FailingCustomizer;
+
+impl bb8::CustomizeConnection<(), Failure> for FailingCustomizer {
+    fn on_acquire<'a>(
+        &'a self,
+        _: &'a mut (),
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), Failure>> + Send + 'a>> {
+        Box::pin(async { Err(Failure) })
+    }
+}
+
+#[tokio::test]
+async fn fatal_connect_and_customizer_errors_stop_build_retries() {
+    // Fail either connect() or the customizer after connect() succeeds.
+    for result in [Err(Failure), Ok(())] {
+        let (attempts, mut rx) = mpsc::unbounded_channel();
+        let build = tokio::spawn(
+            Pool::builder()
+                .min_idle(1)
+                .connection_timeout(Duration::from_secs(2))
+                .connection_customizer(Box::new(FailingCustomizer))
+                .build(Controlled {
+                    attempts,
+                    fatal: true,
+                }),
+        );
+        rx.recv().await.unwrap().send(result).unwrap();
+        tokio::time::timeout(Duration::from_millis(100), build)
+            .await
+            .expect("fatal initialization error must return before retry backoff")
+            .unwrap()
+            .unwrap_err();
+        assert!(rx.try_recv().is_err());
+    }
 }
