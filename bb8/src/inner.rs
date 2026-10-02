@@ -186,16 +186,30 @@ impl<M: ManageConnection + Send> PoolInner<M> {
 
     // Outside of Pool to avoid borrow splitting issues on self
     async fn add_connection(&self, approval: Approval) -> Result<(), M::Error> {
-        let new_shared = Arc::downgrade(&self.inner);
-        let shared = match new_shared.upgrade() {
-            None => return Ok(()),
-            Some(shared) => shared,
-        };
+        match self.connect_with_retry().await {
+            Ok(conn) => {
+                self.inner.internals.lock().put(
+                    Conn::new(conn),
+                    Some(approval),
+                    self.inner.clone(),
+                );
+                self.inner.statistics.record(StatsKind::Created);
+                Ok(())
+            }
+            Err(e) => {
+                self.inner.internals.lock().connect_failed(approval);
+                self.inner.notify.notify_waiters();
+                Err(e)
+            }
+        }
+    }
 
+    async fn connect_with_retry(&self) -> Result<M::Connection, M::Error> {
         let start = Instant::now();
         let mut delay = Duration::from_secs(0);
         loop {
-            let conn = shared
+            let conn = self
+                .inner
                 .manager
                 .connect()
                 .and_then(|mut c| async { self.on_acquire_connection(&mut c).await.map(|_| c) })
@@ -203,22 +217,12 @@ impl<M: ManageConnection + Send> PoolInner<M> {
 
             match conn {
                 Ok(conn) => {
-                    let conn = Conn::new(conn);
-                    shared
-                        .internals
-                        .lock()
-                        .put(conn, Some(approval), self.inner.clone());
-                    self.inner.statistics.record(StatsKind::Created);
-                    return Ok(());
+                    return Ok(conn);
                 }
                 Err(e) => {
                     if !self.inner.statics.retry_connection
                         || Instant::now() - start > self.inner.statics.connection_timeout
                     {
-                        let mut locked = shared.internals.lock();
-                        locked.connect_failed(approval);
-                        drop(locked);
-                        self.inner.notify.notify_waiters();
                         return Err(e);
                     } else {
                         self.inner.forward_error(e);
