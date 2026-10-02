@@ -217,6 +217,8 @@ impl<M: ManageConnection + Send> PoolInner<M> {
                     {
                         let mut locked = shared.internals.lock();
                         locked.connect_failed(approval);
+                        drop(locked);
+                        self.inner.notify.notify_waiters();
                         return Err(e);
                     } else {
                         self.inner.forward_error(e);
