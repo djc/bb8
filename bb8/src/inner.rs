@@ -4,6 +4,7 @@ use std::future::Future;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
+use futures_util::future::{select, Either};
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use futures_util::TryFutureExt;
 use tokio::spawn;
@@ -12,7 +13,9 @@ use tokio::time::{interval_at, sleep, timeout, Interval};
 use crate::api::{
     AddError, Builder, ConnectionState, ManageConnection, PooledConnection, RunError, State,
 };
-use crate::internals::{Approval, ApprovalIter, Conn, SharedPool, StatsGetKind, StatsKind};
+use crate::internals::{
+    Approval, ApprovalIter, Conn, GettingResult, SharedPool, StatsGetKind, StatsKind,
+};
 
 pub(crate) struct PoolInner<M: ManageConnection + Send> {
     inner: Arc<SharedPool<M>>,
@@ -44,6 +47,10 @@ impl<M: ManageConnection + Send> PoolInner<M> {
             result?;
         }
         Ok(())
+    }
+
+    pub(crate) fn replenish_after_demand(inner: Arc<SharedPool<M>>) {
+        Self { inner }.spawn_start_connections();
     }
 
     pub(crate) fn spawn_start_connections(&self) {
@@ -86,22 +93,63 @@ impl<M: ManageConnection + Send> PoolInner<M> {
 
         let future = async {
             let getting = self.inner.start_get();
+            let mut connecting = None;
             loop {
-                let (conn, approvals) = getting.get();
-                self.spawn_replenishing_approvals(approvals);
+                // A validator must not consume another getter's notification.
+                let mut conn = {
+                    // Register before inspecting shared state: multiple notifications
+                    // must not collapse while independent getters check the queue.
+                    let notified = self.inner.notify.notified();
+                    tokio::pin!(notified);
+                    notified.as_mut().enable();
+                    let GettingResult {
+                        conn,
+                        approvals,
+                        demand,
+                    } = getting.get(connecting.is_some());
+                    self.spawn_replenishing_approvals(approvals);
+                    if let Some(demand) = demand {
+                        debug_assert!(connecting.is_none());
+                        connecting = Some(Box::pin(async move {
+                            let conn = self.connect_with_retry(false).await?;
+                            let (conn, approvals) = demand.checkout(conn);
+                            self.spawn_replenishing_approvals(approvals);
+                            Ok::<_, M::Error>(conn)
+                        }));
+                    }
 
-                // Cancellation safety: make sure to wrap the connection in a `PooledConnection`
-                // before allowing the code to hit an `await`, so we don't lose the connection.
+                    // Cancellation safety: make sure to wrap the connection in a `PooledConnection`
+                    // before allowing the code to hit an `await`, so we don't lose the connection.
 
-                let mut conn = match conn {
-                    Some(conn) => PooledConnection::new(self, conn),
-                    None => {
-                        wait_time_start = Some(Instant::now());
-                        kind = StatsGetKind::Waited;
-                        self.inner.notify.notified().await;
-                        continue;
+                    match conn {
+                        Some(conn) => PooledConnection::new(self, conn),
+                        None => {
+                            wait_time_start = Some(Instant::now());
+                            kind = StatsGetKind::Waited;
+                            match connecting.as_mut() {
+                                Some(attempt) => {
+                                    match select(attempt.as_mut(), notified.as_mut()).await {
+                                        Either::Left((result, _)) => {
+                                            connecting = None;
+                                            PooledConnection::new(
+                                                self,
+                                                result.map_err(RunError::User)?,
+                                            )
+                                        }
+                                        Either::Right(_) => continue,
+                                    }
+                                }
+                                None => {
+                                    notified.await;
+                                    continue;
+                                }
+                            }
+                        }
                     }
                 };
+
+                // Release a superseded demand reservation before validation can block.
+                drop(connecting.take());
 
                 if !self.inner.statics.test_on_check_out {
                     return Ok(conn);
@@ -113,6 +161,9 @@ impl<M: ManageConnection + Send> PoolInner<M> {
                         self.inner.statistics.record(StatsKind::ClosedInvalid);
                         self.inner.forward_error(e);
                         conn.state = ConnectionState::Invalid;
+                        drop(conn);
+                        // An immediately failing validator must still let the timeout run.
+                        tokio::task::yield_now().await;
                         continue;
                     }
                 }
@@ -186,7 +237,7 @@ impl<M: ManageConnection + Send> PoolInner<M> {
 
     // Outside of Pool to avoid borrow splitting issues on self
     async fn add_connection(&self, approval: Approval) -> Result<(), M::Error> {
-        match self.connect_with_retry().await {
+        match self.connect_with_retry(true).await {
             Ok(conn) => {
                 self.inner.internals.lock().put(
                     Conn::new(conn),
@@ -204,7 +255,7 @@ impl<M: ManageConnection + Send> PoolInner<M> {
         }
     }
 
-    async fn connect_with_retry(&self) -> Result<M::Connection, M::Error> {
+    async fn connect_with_retry(&self, background: bool) -> Result<M::Connection, M::Error> {
         let start = Instant::now();
         let mut delay = Duration::from_secs(0);
         loop {
@@ -217,12 +268,16 @@ impl<M: ManageConnection + Send> PoolInner<M> {
 
             match conn {
                 Ok(conn) => {
+                    if !background {
+                        self.inner.statistics.record(StatsKind::Created);
+                    }
                     return Ok(conn);
                 }
                 Err(e) => {
                     if !self.inner.statics.retry_connection
                         || self.inner.manager.error_is_fatal(&e)
-                        || Instant::now() - start > self.inner.statics.connection_timeout
+                        || (background
+                            && Instant::now() - start > self.inner.statics.connection_timeout)
                     {
                         return Err(e);
                     } else {

@@ -18,7 +18,7 @@ tokio = { version = "1.26", features = ["rt", "sync", "time"] }
 portable-atomic = "1"
 
 [dev-dependencies]
-tokio = { version = "1.0", features = ["macros"] }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 
 [features]
 parking_lot = ["dep:parking_lot", "tokio/parking_lot"]

@@ -22,6 +22,15 @@ impl<M: ManageConnection> Pool<M> {
     }
 
     /// Retrieves a connection from the pool.
+    ///
+    /// A connection attempt reserved by this call returns [`RunError::User`]
+    /// when retries are disabled or [`ManageConnection::error_is_fatal`] returns
+    /// true. Retried and background errors go to the configured error sink.
+    /// This call is bounded by [`Builder::connection_timeout`].
+    ///
+    /// Cancelling or timing out this call drops its connection and customization
+    /// futures, releasing reserved capacity. Background attempts to maintain
+    /// [`Builder::min_idle`] are independent of this call.
     pub async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
         self.inner.get().await
     }
@@ -30,6 +39,7 @@ impl<M: ManageConnection> Pool<M> {
     ///
     /// Using an owning `PooledConnection` makes it easier to leak the connection pool. Therefore, [`Pool::get`]
     /// (which stores a lifetime-bound reference to the pool) should be preferred whenever possible.
+    /// Error and cancellation behavior is the same as [`Pool::get`].
     pub async fn get_owned(&self) -> Result<PooledConnection<'static, M>, RunError<M::Error>> {
         Ok(PooledConnection {
             conn: self.get().await?.take(),
@@ -458,6 +468,7 @@ pub trait ManageConnection: Sized + Send + Sync + 'static {
 
     /// Attempts to create a new connection.
     fn connect(&self) -> impl Future<Output = Result<Self::Connection, Self::Error>> + Send;
+
     /// Determines if the connection is still connected to the database.
     fn is_valid(
         &self,
