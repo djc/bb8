@@ -22,6 +22,15 @@ impl<M: ManageConnection> Pool<M> {
     }
 
     /// Retrieves a connection from the pool.
+    ///
+    /// A connection attempt reserved by this call returns [`RunError::User`]
+    /// when retries are disabled or [`ManageConnection::error_is_fatal`] returns
+    /// true. Retried and background errors go to the configured error sink.
+    /// This call is bounded by [`Builder::connection_timeout`].
+    ///
+    /// Cancelling or timing out this call drops its connection and customization
+    /// futures, releasing reserved capacity. Background attempts to maintain
+    /// [`Builder::min_idle`] are independent of this call.
     pub async fn get(&self) -> Result<PooledConnection<'_, M>, RunError<M::Error>> {
         self.inner.get().await
     }
@@ -30,6 +39,7 @@ impl<M: ManageConnection> Pool<M> {
     ///
     /// Using an owning `PooledConnection` makes it easier to leak the connection pool. Therefore, [`Pool::get`]
     /// (which stores a lifetime-bound reference to the pool) should be preferred whenever possible.
+    /// Error and cancellation behavior is the same as [`Pool::get`].
     pub async fn get_owned(&self) -> Result<PooledConnection<'static, M>, RunError<M::Error>> {
         Ok(PooledConnection {
             conn: self.get().await?.take(),
@@ -369,6 +379,8 @@ impl<M: ManageConnection> Builder<M> {
     /// or intermittent network failures. Some applications however are smart enough to
     /// know that the server is down and retries won't help (and could actually hurt recovery).
     /// In that case, it's better to disable retries here and let the pool error out.
+    /// Errors classified as fatal by [`ManageConnection::error_is_fatal`] are
+    /// never retried.
     ///
     /// Defaults to enabled.
     #[must_use]
@@ -456,6 +468,7 @@ pub trait ManageConnection: Sized + Send + Sync + 'static {
 
     /// Attempts to create a new connection.
     fn connect(&self) -> impl Future<Output = Result<Self::Connection, Self::Error>> + Send;
+
     /// Determines if the connection is still connected to the database.
     fn is_valid(
         &self,
@@ -463,6 +476,14 @@ pub trait ManageConnection: Sized + Send + Sync + 'static {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
     /// Synchronously determine if the connection is no longer usable, if possible.
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
+
+    /// Classifies an error from [`Self::connect`] or connection customization as non-retryable.
+    ///
+    /// Defaults to false. Fatal failures stop retries for that attempt without
+    /// disabling the pool.
+    fn error_is_fatal(&self, _error: &Self::Error) -> bool {
+        false
+    }
 }
 
 /// A trait which provides functionality to initialize a connection
@@ -472,8 +493,8 @@ pub trait CustomizeConnection<C: Send + 'static, E: 'static>:
     /// Called with connections immediately after they are returned from
     /// `ManageConnection::connect`.
     ///
-    /// The default implementation simply returns `Ok(())`. If this method returns an
-    /// error, it will be forwarded to the configured error sink.
+    /// The default implementation simply returns `Ok(())`. Errors follow the
+    /// same retry and reporting behavior as [`ManageConnection::connect`].
     fn on_acquire<'a>(
         &'a self,
         _connection: &'a mut C,

@@ -225,18 +225,31 @@ pub(crate) struct Getting<M: ManageConnection + Send> {
 }
 
 impl<M: ManageConnection + Send> Getting<M> {
-    pub(crate) fn get(&self) -> (Option<Conn<M::Connection>>, ApprovalIter) {
+    pub(crate) fn get(&self, connecting: bool) -> GettingResult<M> {
         let mut locked = self.inner.internals.lock();
         if let Some(IdleConn { conn, .. }) = locked.conns.pop_front() {
-            return (Some(conn), locked.wanted(&self.inner.statics));
+            return GettingResult {
+                conn: Some(conn),
+                approvals: locked.wanted(&self.inner.statics),
+                demand: None,
+            };
         }
 
-        let approvals = match locked.in_flight > locked.pending_conns {
-            true => 1,
-            false => 0,
-        };
-
-        (None, locked.approvals(&self.inner.statics, approvals))
+        let wanted = !connecting && locked.in_flight > locked.pending_conns;
+        let approval = locked
+            .approvals(&self.inner.statics, u32::from(wanted))
+            .next();
+        drop(locked);
+        let demand = approval.map(|approval| Demand {
+            inner: self.inner.clone(),
+            approval: Some(approval),
+            runtime: tokio::runtime::Handle::current(),
+        });
+        GettingResult {
+            conn: None,
+            approvals: ApprovalIter { num: 0 },
+            demand,
+        }
     }
 }
 
@@ -254,6 +267,46 @@ impl<M: ManageConnection + Send> Drop for Getting<M> {
     fn drop(&mut self) {
         let mut locked = self.inner.internals.lock();
         locked.in_flight -= 1;
+    }
+}
+
+pub(crate) struct GettingResult<M: ManageConnection> {
+    pub(crate) conn: Option<Conn<M::Connection>>,
+    pub(crate) approvals: ApprovalIter,
+    pub(crate) demand: Option<Demand<M>>,
+}
+
+pub(crate) struct Demand<M: ManageConnection> {
+    inner: Arc<SharedPool<M>>,
+    approval: Option<Approval>,
+    runtime: tokio::runtime::Handle,
+}
+
+impl<M: ManageConnection> Demand<M> {
+    pub(crate) fn checkout(mut self, conn: M::Connection) -> (Conn<M::Connection>, ApprovalIter) {
+        let approvals = {
+            let mut locked = self.inner.internals.lock();
+            let _ = self.approval.take().expect("live reservation");
+            locked.pending_conns -= 1;
+            locked.num_conns += 1;
+            locked.wanted(&self.inner.statics)
+        };
+        (Conn::new(conn), approvals)
+    }
+}
+
+impl<M: ManageConnection> Drop for Demand<M> {
+    fn drop(&mut self) {
+        if let Some(approval) = self.approval.take() {
+            self.inner.internals.lock().connect_failed(approval);
+            // The canceled reservation may have counted toward min_idle.
+            {
+                // Drop can run outside the runtime that first polled get().
+                let _entered = self.runtime.enter();
+                crate::inner::PoolInner::replenish_after_demand(self.inner.clone());
+            }
+            self.inner.notify.notify_waiters();
+        }
     }
 }
 
