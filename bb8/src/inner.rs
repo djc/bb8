@@ -107,8 +107,16 @@ impl<M: ManageConnection + Send> PoolInner<M> {
                     return Ok(conn);
                 }
 
+                // If this future is dropped while `is_valid` is in flight (by the caller or by
+                // the `connection_timeout` below), the connection may hold a half-finished
+                // validation exchange. Treat it as invalid until validation completes, so that
+                // dropping discards it instead of returning it to the pool.
+                conn.state = ConnectionState::Invalid;
                 match self.inner.manager.is_valid(&mut conn).await {
-                    Ok(()) => return Ok(conn),
+                    Ok(()) => {
+                        conn.state = ConnectionState::Present;
+                        return Ok(conn);
+                    }
                     Err(e) => {
                         self.inner.statistics.record(StatsKind::ClosedInvalid);
                         self.inner.forward_error(e);
