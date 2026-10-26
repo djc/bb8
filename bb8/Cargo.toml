@@ -11,7 +11,7 @@ readme = "../README.md"
 
 [dependencies]
 futures-util = { version = "0.3.2", default-features = false, features = ["alloc"] }
-parking_lot = { version = "0.12", optional = true }
+parking_lot = { version = "0.13", optional = true }
 tokio = { version = "1.0", features = ["rt", "sync", "time"] }
 
 [target.'cfg(not(target_has_atomic = "64"))'.dependencies]
