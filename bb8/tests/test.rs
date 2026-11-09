@@ -1126,3 +1126,58 @@ async fn test_reuse_on_drop() {
 
     assert_eq!(pool.state().connections, 2);
 }
+
+#[tokio::test]
+async fn test_drop_during_is_valid() {
+    // Models a request/response protocol: `is_valid` sends a request and waits for its
+    // reply. If `get()` is dropped while waiting, the reply is still unread, and the next
+    // request on that connection would read it instead of its own.
+    static STALL: AtomicBool = AtomicBool::new(false);
+
+    #[derive(Default)]
+    struct Conn {
+        unanswered: usize,
+    }
+
+    struct Handler;
+
+    impl ManageConnection for Handler {
+        type Connection = Conn;
+        type Error = Error;
+
+        async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+            Ok(Conn::default())
+        }
+
+        async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
+            conn.unanswered += 1;
+            if STALL.swap(false, Ordering::SeqCst) {
+                pending::<()>().await;
+            }
+            conn.unanswered -= 1;
+            Ok(())
+        }
+
+        fn has_broken(&self, _: &mut Self::Connection) -> bool {
+            false
+        }
+    }
+
+    let pool = Pool::builder()
+        .max_size(1)
+        .connection_timeout(Duration::from_millis(100))
+        .build(Handler)
+        .await
+        .unwrap();
+    drop(pool.get().await.unwrap());
+
+    // The pool's own `connection_timeout` drops the stalled validation.
+    STALL.store(true, Ordering::SeqCst);
+    assert!(matches!(pool.get().await, Err(RunError::TimedOut)));
+
+    let conn = pool.get().await.unwrap();
+    assert_eq!(
+        conn.unanswered, 0,
+        "got a connection whose validation was interrupted"
+    );
+}
